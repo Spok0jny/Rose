@@ -637,6 +637,56 @@
       background-color: #4ade80;
     }
 
+    /* Rose Party Member Badges */
+    .v2-banner-component {
+      position: relative;
+    }
+
+    .rose-party-lobby-badge {
+      position: absolute;
+      top: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 32px;
+      height: 32px;
+      background-image: url("http://127.0.0.1:${BRIDGE_PORT}/asset/golden_rose.png");
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      filter: drop-shadow(0 0 6px rgba(200, 170, 110, 0.75)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.85));
+      z-index: 100;
+      pointer-events: auto;
+      cursor: pointer;
+      animation: rose-glow-pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes rose-glow-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 6px rgba(200, 170, 110, 0.6)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.8));
+        transform: translateX(-50%) scale(1);
+      }
+      50% {
+        filter: drop-shadow(0 0 12px rgba(200, 170, 110, 0.95)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
+        transform: translateX(-50%) scale(1.06);
+      }
+    }
+
+    .rose-party-champ-badge {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      min-width: 15px;
+      min-height: 15px;
+      flex-shrink: 0;
+      margin-right: 5px;
+      background-image: url("http://127.0.0.1:${BRIDGE_PORT}/asset/golden_rose.png");
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      filter: drop-shadow(0 0 4px rgba(200, 170, 110, 0.85));
+      vertical-align: middle;
+      cursor: pointer;
+    }
 
     `;
   }
@@ -1345,7 +1395,90 @@
       } else if (!inChampSelect && !inLobby && currentUIMode !== "default") {
         currentUIMode = "default";
       }
+
+      // Update Golden Rose badges on party members in Lobby & Champ Select
+      updatePartyMemberBadges();
     }, 500);
+  }
+
+  function updatePartyMemberBadges() {
+    const connectedPeers = (partyState.peers || []).filter((p) => p.connected);
+    const isPartyActive = partyState.enabled && connectedPeers.length > 0;
+
+    // If party is not active with at least 1 peer, remove any existing badges
+    if (!isPartyActive) {
+      document.querySelectorAll(".rose-party-lobby-badge, .rose-party-champ-badge").forEach((el) => el.remove());
+      return;
+    }
+
+    // Build the set of party member names (lowercased)
+    const partyNames = new Set();
+    if (partyState.my_summoner_name && partyState.my_summoner_name !== "Unknown") {
+      partyNames.add(partyState.my_summoner_name.trim().toLowerCase());
+    }
+    for (const peer of connectedPeers) {
+      if (peer.summoner_name && peer.summoner_name !== "Unknown") {
+        partyNames.add(peer.summoner_name.trim().toLowerCase());
+      }
+    }
+
+    // 1. In Lobby: update player banner cards (center top above avatar)
+    if (isInLobby()) {
+      const banners = document.querySelectorAll(".v2-banner-component, .party-member-component, .lobby-player");
+      banners.forEach((banner) => {
+        const isLocal = banner.classList.contains("local-player");
+        const bannerText = (banner.textContent || "").toLowerCase();
+        const isPartyMember = isLocal || Array.from(partyNames).some((name) => bannerText.includes(name));
+
+        const existingBadge = banner.querySelector(".rose-party-lobby-badge");
+        if (isPartyMember) {
+          if (!existingBadge) {
+            const badge = document.createElement("div");
+            badge.className = "rose-party-lobby-badge";
+            attachTooltip(badge, "Rose Party Member");
+            banner.appendChild(badge);
+          }
+        } else if (existingBadge) {
+          existingBadge.remove();
+        }
+      });
+    } else {
+      document.querySelectorAll(".rose-party-lobby-badge").forEach((el) => el.remove());
+    }
+
+    // 2. In Champ Select: update summoner rows (placed right before nickname)
+    if (isInChampSelect()) {
+      const nameElements = document.querySelectorAll(
+        ".summoner-array [class*='name'], " +
+        ".summoner-array .summoner-name, " +
+        ".champion-select-container [class*='name'], " +
+        ".champion-select-container .summoner-name, " +
+        ".summoner-row [class*='name']"
+      );
+
+      nameElements.forEach((el) => {
+        const text = (el.textContent || "").trim().toLowerCase();
+        if (!text || text.length > 35) return;
+
+        const isPartyMember = Array.from(partyNames).some((name) => text === name || text.startsWith(name));
+        const parent = el.parentElement;
+        if (!parent) return;
+
+        const existingBadge = parent.querySelector(".rose-party-champ-badge");
+        if (isPartyMember) {
+          if (!existingBadge) {
+            const badge = document.createElement("span");
+            badge.className = "rose-party-champ-badge";
+            attachTooltip(badge, "Rose Party Member");
+            parent.insertBefore(badge, el);
+          }
+        } else if (existingBadge) {
+          existingBadge.remove();
+        }
+      });
+    } else {
+      document.querySelectorAll(".rose-party-champ-badge").forEach((el) => el.remove());
+    }
   }
 
   function stopGamePhaseMonitor() {
