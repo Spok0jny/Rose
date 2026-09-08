@@ -66,8 +66,8 @@ class PartyLANServer:
         """Called whenever the member list changes (join/leave/skin update)."""
         self._on_members_changed = callback
 
-    async def start(self, timeout: float = 10.0) -> bool:
-        """Start the WebSocket server.
+    async def start(self, timeout: float = 10.0, max_port_retries: int = 5) -> bool:
+        """Start the WebSocket server with automatic port fallback if occupied.
 
         Returns:
             True if server started successfully, False otherwise.
@@ -76,36 +76,54 @@ class PartyLANServer:
             log.warning("[LAN_SERVER] Server is already running")
             return True
 
-        try:
-            self._server = await asyncio.wait_for(
-                websockets.serve(
-                    self._handle_connection,
-                    self.host,
-                    self.port,
-                    max_size=65536,
-                    ping_interval=25,
-                    ping_timeout=10,
-                ),
-                timeout=timeout,
-            )
-            self._running = True
-            log.info(f"[LAN_SERVER] Started on {self.host}:{self.port}")
-            return True
-        except OSError as e:
-            if e.errno == 10048 or "address already in use" in str(e).lower():
-                log.error(
-                    f"[LAN_SERVER] Port {self.port} is already in use. "
-                    f"Close the other application or choose a different port."
+        initial_port = self.port
+        for attempt in range(max_port_retries):
+            target_port = initial_port + attempt
+            try:
+                self._server = await asyncio.wait_for(
+                    websockets.serve(
+                        self._handle_connection,
+                        self.host,
+                        target_port,
+                        max_size=65536,
+                        ping_interval=25,
+                        ping_timeout=10,
+                    ),
+                    timeout=timeout,
                 )
-            else:
+                self.port = target_port
+                self._running = True
+                if attempt > 0:
+                    log.info(
+                        f"[LAN_SERVER] Port {initial_port} in use, successfully bound to fallback port {self.port}"
+                    )
+                else:
+                    log.info(f"[LAN_SERVER] Started on {self.host}:{self.port}")
+                return True
+            except OSError as e:
+                if (
+                    e.errno == 10048
+                    or "address already in use" in str(e).lower()
+                    or "only one usage of each socket address" in str(e).lower()
+                ):
+                    log.warning(
+                        f"[LAN_SERVER] Port {target_port} is already in use, trying next port..."
+                    )
+                    continue
+                else:
+                    log.error(f"[LAN_SERVER] Failed to start on port {target_port}: {e}")
+                    return False
+            except asyncio.TimeoutError:
+                log.error(f"[LAN_SERVER] Start timed out on port {target_port}")
+                return False
+            except Exception as e:
                 log.error(f"[LAN_SERVER] Failed to start: {e}")
-            return False
-        except asyncio.TimeoutError:
-            log.error("[LAN_SERVER] Start timed out")
-            return False
-        except Exception as e:
-            log.error(f"[LAN_SERVER] Failed to start: {e}")
-            return False
+                return False
+
+        log.error(
+            f"[LAN_SERVER] All {max_port_retries} port attempts starting from {initial_port} failed (in use)."
+        )
+        return False
 
     # Alias for PartyRelay interface compatibility
     async def connect(self, timeout: float = 10.0) -> bool:

@@ -55,6 +55,10 @@ class PartyUIBridge:
         elif msg_type == "party-disable":
             return await self._handle_disable()
 
+        elif msg_type == "party-join":
+            token = data.get("token", "")
+            return await self._handle_join(token)
+
         elif msg_type == "party-add-peer":
             token = data.get("token", "")
             return await self._handle_add_peer(token)
@@ -110,6 +114,31 @@ class PartyUIBridge:
             log.error(f"[PARTY_UI] Failed to disable: {e}")
             return {
                 "type": "party-disabled",
+                "success": False,
+                "error": str(e),
+            }
+
+    async def _handle_join(self, token: str) -> dict:
+        """Handle party join request (guest connecting to host)"""
+        if not token:
+            return {
+                "type": "party-joined",
+                "success": False,
+                "error": "No token provided",
+            }
+
+        try:
+            success, error = await self.party_manager.join(token)
+            self._broadcast_state()
+            return {
+                "type": "party-joined",
+                "success": success,
+                "error": error,
+            }
+        except Exception as e:
+            log.error(f"[PARTY_UI] Failed to join party: {e}")
+            return {
+                "type": "party-joined",
                 "success": False,
                 "error": str(e),
             }
