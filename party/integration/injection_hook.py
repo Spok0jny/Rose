@@ -59,6 +59,32 @@ class PartyInjectionHook:
         # Filter out our own skin (we handle that separately)
         peer_skins = [s for s in all_skins if not s.is_local]
 
+        # Protect against champion collisions (One For All, Arena, Blind Pick, Quickplay)
+        local_champ_id = getattr(self.state, "locked_champ_id", None) or getattr(self.state, "hovered_champ_id", None)
+        valid_peer_skins = []
+        seen_champions = set()
+        if local_champ_id:
+            seen_champions.add(local_champ_id)
+
+        for skin in peer_skins:
+            if skin.champion_id in seen_champions:
+                if skin.champion_id == local_champ_id:
+                    log.warning(
+                        f"[PARTY_INJECT] Champion collision: Both you and {skin.summoner_name} "
+                        f"play champion {skin.champion_id}. Prioritizing your local skin."
+                    )
+                else:
+                    log.warning(
+                        f"[PARTY_INJECT] Duplicate peer champion {skin.champion_id} for "
+                        f"{skin.summoner_name}. Skipping duplicate to prevent mod collision."
+                    )
+                continue
+
+            seen_champions.add(skin.champion_id)
+            valid_peer_skins.append(skin)
+
+        peer_skins = valid_peer_skins
+
         if peer_skins:
             log.info(
                 f"[PARTY_INJECT] Found {len(peer_skins)} party member skin(s) to inject"
