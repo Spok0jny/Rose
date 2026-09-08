@@ -880,6 +880,9 @@
       }
 
       // Request network interfaces to populate dropdown
+      if (networkInterfaces && networkInterfaces.length > 0) {
+        populateIPDropdown(networkInterfaces);
+      }
       sendBridgeMessage({ type: "party-get-interfaces" });
     } catch (e) {
       console.error(`${LOG_PREFIX} Failed to create panel:`, e);
@@ -1175,13 +1178,16 @@
 
       case "party-interfaces":
         networkInterfaces = data.interfaces || [];
+        console.log(`${LOG_PREFIX} Received network interfaces:`, networkInterfaces);
         populateIPDropdown(networkInterfaces);
         break;
     }
   }
 
   function populateIPDropdown(interfaces) {
-    const select = document.getElementById("party-ip-select");
+    const select = partyPanel
+      ? partyPanel.querySelector("#party-ip-select")
+      : document.getElementById("party-ip-select");
     if (!select) return;
 
     select.innerHTML = "";
@@ -1207,8 +1213,10 @@
     manualOpt.textContent = "Enter IP manually...";
     select.appendChild(manualOpt);
 
-    // Default: select first VPN interface, or first interface
-    if (interfaces.length > 0) {
+    // Keep user's previous selection if valid, otherwise pick first option
+    if (selectedIP && Array.from(select.options).some((o) => o.value === selectedIP)) {
+      select.value = selectedIP;
+    } else if (interfaces.length > 0) {
       selectedIP = interfaces[0].ip;
       select.value = interfaces[0].ip;
     }
@@ -1229,16 +1237,21 @@
       // Flush queued messages
       while (bridgeQueue.length > 0) {
         const msg = bridgeQueue.shift();
+        console.log(`${LOG_PREFIX} [TX-queue]`, msg);
         bridgeSocket.send(JSON.stringify(msg));
       }
 
-      // Request current party state
+      // Request current party state & network interfaces
       sendBridgeMessage({ type: "party-get-state" });
+      sendBridgeMessage({ type: "party-get-interfaces" });
     };
 
     bridgeSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        if (data.type && data.type.startsWith("party-")) {
+          console.log(`${LOG_PREFIX} [RX]`, data.type, data);
+        }
         handleBridgeMessage(data);
       } catch (e) {
         console.error(`${LOG_PREFIX} Error parsing message:`, e);
@@ -1257,6 +1270,9 @@
   }
 
   function sendBridgeMessage(msg) {
+    if (msg.type && msg.type.startsWith("party-")) {
+      console.log(`${LOG_PREFIX} [TX]`, msg.type, msg);
+    }
     if (bridgeReady && bridgeSocket && bridgeSocket.readyState === WebSocket.OPEN) {
       bridgeSocket.send(JSON.stringify(msg));
     } else {

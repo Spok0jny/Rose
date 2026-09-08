@@ -102,7 +102,19 @@ class PartyManager:
             self.party_state.my_summoner_id = my_summoner_id
             self.party_state.my_summoner_name = my_summoner_name
 
+            # If no host_ip provided, auto-detect best interface
+            if not host_ip:
+                interfaces = get_network_interfaces()
+                for iface in interfaces:
+                    if iface["ip"] != "127.0.0.1":
+                        host_ip = iface["ip"]
+                        break
+                if not host_ip:
+                    host_ip = "127.0.0.1"
+                log.info(f"[PARTY] Auto-selected host IP: {host_ip}")
+
             # Start the local LAN server
+            log.info(f"[PARTY] Starting local WebSocket server on 0.0.0.0:{host_port}...")
             self._relay = PartyLANServer(host="0.0.0.0", port=host_port)
             self._relay.set_on_members_changed(self._on_relay_members_changed)
             self._is_host = True
@@ -135,8 +147,8 @@ class PartyManager:
             self._skin_broadcast_task = asyncio.create_task(self._skin_broadcast_loop())
 
             log.info(
-                f"[PARTY] Party mode enabled (LAN host on {host_ip}:{host_port}). "
-                f"Token: {token_str[:20]}..."
+                f"[PARTY] Party mode enabled successfully! Hosting at {host_ip}:{host_port} | "
+                f"Token: {token_str[:25]}..."
             )
             self._notify_state_change()
             return token_str

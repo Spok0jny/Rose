@@ -249,6 +249,8 @@ class MessageHandler:
             self._handle_party_remove_peer(payload)
         elif payload_type == "party-get-state":
             self._handle_party_get_state(payload)
+        elif payload_type == "party-get-interfaces":
+            self._handle_party_get_interfaces(payload)
         elif payload.get("skin"):
             # Handle skin detection message
             self._handle_skin_detection(payload)
@@ -2701,9 +2703,31 @@ class MessageHandler:
 
     # ==================== Party Mode Handlers ====================
 
+    def _handle_party_get_interfaces(self, payload: dict) -> None:
+        """Handle request for available network interfaces (for Party Mode host IP)"""
+        try:
+            from party.network.lan_server import get_network_interfaces
+            interfaces = get_network_interfaces()
+            log.info(f"[PARTY] Network interfaces requested by UI: found {len(interfaces)} interfaces {[i['ip'] for i in interfaces]}")
+            response_payload = {
+                "type": "party-interfaces",
+                "interfaces": interfaces,
+            }
+            self._send_response(json.dumps(response_payload))
+        except Exception as e:
+            log.error(f"[PARTY] Error getting network interfaces: {e}", exc_info=True)
+            self._send_response(json.dumps({
+                "type": "party-interfaces",
+                "interfaces": [{"name": "Loopback (localhost)", "ip": "127.0.0.1", "type": "loopback"}],
+            }))
+
     def _handle_party_enable(self, payload: dict) -> None:
         """Handle party mode enable request"""
         try:
+            host_ip = payload.get("host_ip", "")
+            host_port = int(payload.get("host_port", 7865))
+            log.info(f"[PARTY] UI requested party-enable with host_ip='{host_ip}', host_port={host_port}")
+
             party_manager = getattr(self.shared_state, 'party_manager', None)
             if not party_manager:
                 # Initialize party manager
@@ -2713,6 +2737,7 @@ class MessageHandler:
                 # Get LCU instance from skin_scraper
                 lcu = self.skin_scraper.lcu if self.skin_scraper else None
                 if not lcu:
+                    log.warning("[PARTY] LCU not available when trying to enable party mode")
                     response_payload = {
                         "type": "party-enabled",
                         "success": False,
@@ -2732,7 +2757,7 @@ class MessageHandler:
 
             async def do_enable():
                 try:
-                    token = await party_manager.enable()
+                    token = await party_manager.enable(host_ip=host_ip, host_port=host_port)
                     self.shared_state.party_mode_enabled = True
                     self.shared_state.party_token = token
                     response_payload = {
@@ -2741,9 +2766,9 @@ class MessageHandler:
                         "token": token,
                     }
                     self._send_response(json.dumps(response_payload))
-                    log.info(f"[PARTY] Party mode enabled, token: {token[:30]}...")
+                    log.info(f"[PARTY] Party mode enabled successfully! Token: {token[:30]}...")
                 except Exception as e:
-                    log.error(f"[PARTY] Failed to enable party mode: {e}")
+                    log.error(f"[PARTY] Failed to enable party mode: {e}", exc_info=True)
                     response_payload = {
                         "type": "party-enabled",
                         "success": False,
@@ -2758,7 +2783,7 @@ class MessageHandler:
                 log.warning("[PARTY] No event loop available")
 
         except Exception as e:
-            log.error(f"[PARTY] Error handling party enable: {e}")
+            log.error(f"[PARTY] Error handling party enable: {e}", exc_info=True)
             response_payload = {
                 "type": "party-enabled",
                 "success": False,
@@ -2769,6 +2794,7 @@ class MessageHandler:
     def _handle_party_disable(self, payload: dict) -> None:
         """Handle party mode disable request"""
         try:
+            log.info("[PARTY] UI requested party-disable")
             party_manager = getattr(self.shared_state, 'party_manager', None)
             if not party_manager:
                 response_payload = {
@@ -2790,9 +2816,9 @@ class MessageHandler:
                         "success": True,
                     }
                     self._send_response(json.dumps(response_payload))
-                    log.info("[PARTY] Party mode disabled")
+                    log.info("[PARTY] Party mode disabled successfully")
                 except Exception as e:
-                    log.error(f"[PARTY] Failed to disable party mode: {e}")
+                    log.error(f"[PARTY] Failed to disable party mode: {e}", exc_info=True)
                     response_payload = {
                         "type": "party-disabled",
                         "success": False,
@@ -2804,7 +2830,7 @@ class MessageHandler:
                 asyncio.run_coroutine_threadsafe(do_disable(), self.websocket_server.loop)
 
         except Exception as e:
-            log.error(f"[PARTY] Error handling party disable: {e}")
+            log.error(f"[PARTY] Error handling party disable: {e}", exc_info=True)
 
     def _handle_party_add_peer(self, payload: dict) -> None:
         """Handle add peer request"""
@@ -2819,6 +2845,7 @@ class MessageHandler:
                 self._send_response(json.dumps(response_payload))
                 return
 
+            log.info(f"[PARTY] UI requested add-peer with token: {token[:25]}...")
             party_manager = getattr(self.shared_state, 'party_manager', None)
             if not party_manager or not party_manager.enabled:
                 response_payload = {
@@ -2845,7 +2872,7 @@ class MessageHandler:
                     else:
                         log.warning(f"[PARTY] Failed to add peer: {error}")
                 except Exception as e:
-                    log.error(f"[PARTY] Failed to add peer: {e}")
+                    log.error(f"[PARTY] Failed to add peer: {e}", exc_info=True)
                     response_payload = {
                         "type": "party-peer-added",
                         "success": False,
@@ -2857,7 +2884,7 @@ class MessageHandler:
                 asyncio.run_coroutine_threadsafe(do_add_peer(), self.websocket_server.loop)
 
         except Exception as e:
-            log.error(f"[PARTY] Error handling add peer: {e}")
+            log.error(f"[PARTY] Error handling add peer: {e}", exc_info=True)
 
     def _handle_party_remove_peer(self, payload: dict) -> None:
         """Handle remove peer request"""
@@ -2866,6 +2893,7 @@ class MessageHandler:
             if not summoner_id:
                 return
 
+            log.info(f"[PARTY] UI requested remove-peer for summoner_id={summoner_id}")
             party_manager = getattr(self.shared_state, 'party_manager', None)
             if not party_manager:
                 return
@@ -2883,13 +2911,13 @@ class MessageHandler:
                     self._send_response(json.dumps(response_payload))
                     log.info(f"[PARTY] Peer {summoner_id} removed")
                 except Exception as e:
-                    log.error(f"[PARTY] Failed to remove peer: {e}")
+                    log.error(f"[PARTY] Failed to remove peer: {e}", exc_info=True)
 
             if self.websocket_server and self.websocket_server.loop:
                 asyncio.run_coroutine_threadsafe(do_remove_peer(), self.websocket_server.loop)
 
         except Exception as e:
-            log.error(f"[PARTY] Error handling remove peer: {e}")
+            log.error(f"[PARTY] Error handling remove peer: {e}", exc_info=True)
 
     def _handle_party_get_state(self, payload: dict) -> None:
         """Handle get party state request"""
@@ -2914,4 +2942,5 @@ class MessageHandler:
             self._send_response(json.dumps(response_payload))
 
         except Exception as e:
-            log.error(f"[PARTY] Error getting party state: {e}")
+            log.error(f"[PARTY] Error getting party state: {e}", exc_info=True)
+
