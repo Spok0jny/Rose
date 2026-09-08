@@ -640,22 +640,18 @@
     }
 
     /* Rose Party Member Badges */
-    .v2-banner-component {
-      position: relative;
-    }
-
     .rose-party-lobby-badge {
       position: absolute;
-      top: 48px;
+      top: -14px;
       left: 50%;
       transform: translateX(-50%);
-      width: 32px;
-      height: 32px;
+      width: 22px;
+      height: 22px;
       background-image: url("${GOLDEN_ROSE_ICON}");
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
-      filter: drop-shadow(0 0 6px rgba(200, 170, 110, 0.75)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.85));
+      filter: drop-shadow(0 0 5px rgba(200, 170, 110, 0.85)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.9));
       z-index: 100;
       pointer-events: auto;
       cursor: pointer;
@@ -664,32 +660,14 @@
 
     @keyframes rose-glow-pulse {
       0%, 100% {
-        filter: drop-shadow(0 0 6px rgba(200, 170, 110, 0.6)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.8));
+        filter: drop-shadow(0 0 4px rgba(200, 170, 110, 0.7)) drop-shadow(0 0 2px rgba(240, 230, 210, 0.8));
         transform: translateX(-50%) scale(1);
       }
       50% {
-        filter: drop-shadow(0 0 12px rgba(200, 170, 110, 0.95)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
-        transform: translateX(-50%) scale(1.06);
+        filter: drop-shadow(0 0 10px rgba(200, 170, 110, 0.95)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
+        transform: translateX(-50%) scale(1.08);
       }
     }
-
-    .rose-party-champ-badge {
-      display: inline-block;
-      width: 15px;
-      height: 15px;
-      min-width: 15px;
-      min-height: 15px;
-      flex-shrink: 0;
-      margin-right: 5px;
-      background-image: url("${GOLDEN_ROSE_ICON}");
-      background-size: contain;
-      background-repeat: no-repeat;
-      background-position: center;
-      filter: drop-shadow(0 0 4px rgba(200, 170, 110, 0.85));
-      vertical-align: middle;
-      cursor: pointer;
-    }
-
     `;
   }
 
@@ -1407,9 +1385,12 @@
     const connectedPeers = (partyState.peers || []).filter((p) => p.connected);
     const isPartyActive = partyState.enabled && connectedPeers.length > 0;
 
-    // If party is not active with at least 1 peer, remove any existing badges
-    if (!isPartyActive) {
-      document.querySelectorAll(".rose-party-lobby-badge, .rose-party-champ-badge").forEach((el) => el.remove());
+    // Clean up any legacy champ badges
+    document.querySelectorAll(".rose-party-champ-badge").forEach((el) => el.remove());
+
+    // Only show in Lobby when party is active with at least 1 peer
+    if (!isPartyActive || !isInLobby()) {
+      document.querySelectorAll(".rose-party-lobby-badge").forEach((el) => el.remove());
       return;
     }
 
@@ -1424,63 +1405,34 @@
       }
     }
 
-    // 1. In Lobby: update player banner cards (center top above avatar)
-    if (isInLobby()) {
-      const banners = document.querySelectorAll(".v2-banner-component, .party-member-component, .lobby-player");
-      banners.forEach((banner) => {
-        const isLocal = banner.classList.contains("local-player");
-        const bannerText = (banner.textContent || "").toLowerCase();
-        const isPartyMember = isLocal || Array.from(partyNames).some((name) => bannerText.includes(name));
+    // In Lobby: anchor the badge directly onto the player's crest / avatar
+    const banners = document.querySelectorAll(".v2-banner-component, .party-member-component, .lobby-player");
+    banners.forEach((banner) => {
+      const isLocal = banner.classList.contains("local-player");
+      const bannerText = (banner.textContent || "").toLowerCase();
+      const isPartyMember = isLocal || Array.from(partyNames).some((name) => bannerText.includes(name));
 
-        const existingBadge = banner.querySelector(".rose-party-lobby-badge");
-        if (isPartyMember) {
-          if (!existingBadge) {
-            const badge = document.createElement("div");
-            badge.className = "rose-party-lobby-badge";
-            attachTooltip(badge, "Rose Party Member");
-            banner.appendChild(badge);
-          }
-        } else if (existingBadge) {
-          existingBadge.remove();
-        }
-      });
-    } else {
-      document.querySelectorAll(".rose-party-lobby-badge").forEach((el) => el.remove());
-    }
-
-    // 2. In Champ Select: update summoner rows (placed right before nickname)
-    if (isInChampSelect()) {
-      const nameElements = document.querySelectorAll(
-        ".summoner-array [class*='name'], " +
-        ".summoner-array .summoner-name, " +
-        ".champion-select-container [class*='name'], " +
-        ".champion-select-container .summoner-name, " +
-        ".summoner-row [class*='name']"
+      // Find the crest / summoner icon container on the banner
+      const crestTarget = banner.querySelector(
+        "lol-regalia-crest-v2-element, lol-regalia-emblem-element, .regalia-emblem, .banner-summoner-icon, .crest-container"
       );
 
-      nameElements.forEach((el) => {
-        const text = (el.textContent || "").trim().toLowerCase();
-        if (!text || text.length > 35) return;
+      const existingBadge = banner.querySelector(".rose-party-lobby-badge");
 
-        const isPartyMember = Array.from(partyNames).some((name) => text === name || text.startsWith(name));
-        const parent = el.parentElement;
-        if (!parent) return;
-
-        const existingBadge = parent.querySelector(".rose-party-champ-badge");
-        if (isPartyMember) {
-          if (!existingBadge) {
-            const badge = document.createElement("span");
-            badge.className = "rose-party-champ-badge";
-            attachTooltip(badge, "Rose Party Member");
-            parent.insertBefore(badge, el);
+      if (isPartyMember && crestTarget) {
+        if (!existingBadge) {
+          if (getComputedStyle(crestTarget).position === "static") {
+            crestTarget.style.position = "relative";
           }
-        } else if (existingBadge) {
-          existingBadge.remove();
+          const badge = document.createElement("div");
+          badge.className = "rose-party-lobby-badge";
+          attachTooltip(badge, "Rose Party Member");
+          crestTarget.appendChild(badge);
         }
-      });
-    } else {
-      document.querySelectorAll(".rose-party-champ-badge").forEach((el) => el.remove());
-    }
+      } else if (existingBadge) {
+        existingBadge.remove();
+      }
+    });
   }
 
   function stopGamePhaseMonitor() {
