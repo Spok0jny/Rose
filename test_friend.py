@@ -8,6 +8,7 @@ directly from the same machine without needing a second PC or LoL account.
 
 import asyncio
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -20,27 +21,26 @@ from party.protocol.token_codec import PartyToken
 
 async def main():
     print("=" * 65)
-    print("   ROSE PARTY MODE - SYMULATOR ZNAJOMEGO (TEST NA 1 PC)")
+    print("   ROSE PARTY MODE - FRIEND SIMULATOR (DEV TEST TOOL)")
     print("=" * 65)
     print()
-    print("Ten skrypt udaje drugiego gracza (Twojego kumpla).")
-    print("Wklej swoj token wygenerowany w Rose lub wcisnij Enter, aby")
-    print("polaczyc sie domyslnie pod ws://127.0.0.1:7865.")
+    print("This script simulates a connecting party member (peer).")
+    print("Paste your Rose party token, or press Enter to connect")
+    print("directly via ws://127.0.0.1:7865.")
     print()
 
-    token_input = input("Wklej token ROSE:... (albo wcisnij Enter dla 127.0.0.1): ").strip()
+    token_input = input("Paste token ROSE:... (or press Enter for localhost): ").strip()
 
     host_ip = "127.0.0.1"
     host_port = 7865
-    import random
     rand_num = random.randint(1, 99)
-    friend_name = f"ZiomekTestowy_{rand_num}"
+    friend_name = f"FriendBot_{rand_num}"
     friend_id = 999000000 + rand_num
 
     if token_input:
         try:
             token = PartyToken.decode(token_input)
-            print(f"\n[OK] Rozkodowano token v{token.version}!")
+            print(f"\n[OK] Decoded token v{token.version}!")
             print(f"     Host IP:   {token.host_ip or '127.0.0.1'}")
             print(f"     Host Port: {token.host_port}")
             print(f"     Host Summoner ID: {token.summoner_id}")
@@ -48,36 +48,35 @@ async def main():
                 host_ip = token.host_ip
             host_port = token.host_port
         except Exception as e:
-            print(f"\n[BLAD] Nie udalo sie rozkodowac tokenu: {e}")
-            print("Uzywam domyslnego adresu 127.0.0.1:7865...")
+            print(f"\n[WARN] Failed to decode token: {e}")
+            print("Falling back to default 127.0.0.1:7865...")
 
     url = f"ws://{host_ip}:{host_port}"
-    print(f"\n[>>] Laczenie do Twojego Rose pod adresem: {url} ...")
+    print(f"\n[>>] Connecting to Rose at: {url} ...")
 
     try:
         ws = await websockets.connect(url, max_size=65536)
     except Exception as e:
-        print(f"\n[BLAD] Nie mozna polaczyc sie z {url}!")
-        print(f"Szczegoly: {e}")
-        print("\nUpewnij sie, ze Party Mode w Rose jest WLACZONE (przycisk 'Enable Party Mode').")
-        input("\nWcisnij Enter, aby zakonczyc...")
+        print(f"\n[ERROR] Could not connect to {url}!")
+        print(f"Details: {e}")
+        print("\nMake sure Party Mode is enabled in Rose before connecting.")
+        input("\nPress Enter to exit...")
         return
 
-    print(f"[OK] Polaczono pomyslnie z serwerem Party Mode!")
+    print(f"[OK] Successfully connected to Party Mode server!")
 
-    # Dolacz do pokoju
+    # Join room
     join_payload = {
         "type": "join",
         "summoner_id": friend_id,
         "summoner_name": friend_name,
     }
     await ws.send(json.dumps(join_payload))
-    print(f"[OK] Wyslano dolaczenie jako gracz '{friend_name}' (ID: {friend_id})")
-    print("\n>>> SPOJRZ TERAZ NA OKIENKO PARTY MODE W KLIENCIE LOLA! <<<")
-    print("Licznik znajomych powinien zmienic sie na: CONNECTED FRIENDS (1)")
-    print(f"Na liscie powinien pojawic sie: {friend_name}\n")
+    print(f"[OK] Joined room as '{friend_name}' (ID: {friend_id})")
+    print("\n>>> Check Party Mode in League Client! <<<")
+    print(f"Peer '{friend_name}' should now appear under Connected Friends.\n")
 
-    # Zadanie nasluchiwania odpowiedzi w tle
+    # Background listener for room updates
     async def listen_loop():
         try:
             async for message in ws:
@@ -85,13 +84,13 @@ async def main():
                 if data.get("type") == "members":
                     members = data.get("members", [])
                     names = [m.get("summoner_name") for m in members]
-                    print(f"\n[SERWER] Aktualna lista graczy w pokoju ({len(members)}): {names}")
+                    print(f"\n[SERVER] Active room members ({len(members)}): {names}")
         except Exception:
             pass
 
     listener_task = asyncio.create_task(listen_loop())
 
-    # Menu interaktywne
+    # Interactive test menu
     skins = [
         {"name": "Spirit Blossom Ahri", "champion_id": 103, "skin_id": 103027},
         {"name": "PROJECT: Vayne", "champion_id": 67, "skin_id": 67011},
@@ -100,21 +99,21 @@ async def main():
     ]
 
     print("-" * 65)
-    print("Opcje testowe:")
+    print("Test Options:")
     for idx, s in enumerate(skins, 1):
-        print(f"  [{idx}] Ustaw skin znajomego: {s['name']}")
-    print("  [q] Rozlacz znajomego i zakoncz test")
+        print(f"  [{idx}] Set peer skin: {s['name']}")
+    print("  [q] Disconnect peer and exit")
     print("-" * 65)
 
     loop = asyncio.get_running_loop()
 
     while True:
         try:
-            choice = await loop.run_in_executor(None, input, "\nWybierz opcje (1-4 lub q): ")
+            choice = await loop.run_in_executor(None, input, "\nSelect option (1-4 or q): ")
             choice = choice.strip().lower()
 
             if choice == "q":
-                print("\nRozlaczanie...")
+                print("\nDisconnecting...")
                 break
 
             if choice in ("1", "2", "3", "4"):
@@ -127,20 +126,19 @@ async def main():
                     }
                 }
                 await ws.send(json.dumps(skin_payload))
-                print(f"[OK] Wyslano wybor skina: {selected['name']} (ID: {selected['skin_id']})")
-                print("Sprawdz w kliencie LoL czy pojawila sie informacja o skinie!")
+                print(f"[OK] Broadcast skin selection: {selected['name']} (ID: {selected['skin_id']})")
             else:
-                print("Niepoprawny wybor.")
+                print("Invalid choice.")
         except (KeyboardInterrupt, EOFError):
             break
 
     listener_task.cancel()
     await ws.close()
-    print("[OK] Rozlaczono. W LoLu licznik znajomych powinien wrocic do (0).")
+    print("[OK] Disconnected.")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nPrzerwano.")
+        print("\nInterrupted.")
