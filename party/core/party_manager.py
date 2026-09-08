@@ -407,8 +407,17 @@ class PartyManager:
                 if not self._running:
                     continue
 
-                current_skin_id = self.state.last_hovered_skin_id
-                current_chroma_id = getattr(self.state, "selected_chroma_id", None)
+                # Resolve effective skin id (considering random mode and historic mode)
+                if getattr(self.state, "random_mode_active", False) and getattr(self.state, "random_skin_id", None):
+                    current_skin_id = self.state.random_skin_id
+                    current_chroma_id = getattr(self.state, "random_chroma_id", None)
+                elif getattr(self.state, "historic_mode_active", False) and getattr(self.state, "historic_skin_id", None):
+                    current_skin_id = self.state.historic_skin_id
+                    current_chroma_id = None
+                else:
+                    current_skin_id = self.state.last_hovered_skin_id
+                    current_chroma_id = getattr(self.state, "selected_chroma_id", None)
+
                 current_custom_mod = getattr(self.state, "selected_custom_mod", None)
                 # Track custom mod by its path to detect changes
                 custom_mod_key = current_custom_mod.get("relative_path") if current_custom_mod else None
