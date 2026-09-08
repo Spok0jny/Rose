@@ -32,8 +32,10 @@ async def main():
 
     host_ip = "127.0.0.1"
     host_port = 7865
-    friend_name = "ZiomekTestowy"
-    friend_id = 999123456
+    import random
+    rand_num = random.randint(1, 99)
+    friend_name = f"ZiomekTestowy_{rand_num}"
+    friend_id = 999000000 + rand_num
 
     if token_input:
         try:
