@@ -148,8 +148,11 @@ class PartyInjectionHook:
         chroma_id = skin_data.chroma_id
         custom_mod_path = skin_data.custom_mod_path
 
-        # Determine skin name for ZIP resolution
-        skin_name = f"skin_{skin_id}"
+        # Determine skin name for ZIP resolution (chroma takes precedence if present)
+        if chroma_id:
+            skin_name = f"chroma_{chroma_id}"
+        else:
+            skin_name = f"skin_{skin_id}"
 
         if custom_mod_path:
             # Party member has a custom mod that we also have locally (matched by hash)
@@ -182,6 +185,7 @@ class PartyInjectionHook:
         try:
             zip_path = injector._resolve_zip(
                 skin_name,
+                chroma_id=chroma_id,
                 skin_name=skin_name,
                 champion_name=None,
                 champion_id=champion_id,
