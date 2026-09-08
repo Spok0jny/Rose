@@ -2,19 +2,21 @@
 # -*- coding: utf-8 -*-
 """
 Party Manager
-Orchestrator for party mode skin sharing via WebSocket relay.
+Orchestrator for party mode skin sharing via LAN direct connection.
+Host runs a local WebSocket server; clients connect directly.
 """
 
 import asyncio
 import secrets
 import time
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from lcu import LCU
 from state import SharedState
 from utils.core.logging import get_logger
 
-from ..network.ws_relay import PartyRelay, compute_room_key
+from ..network.lan_server import PartyLANServer, get_network_interfaces, DEFAULT_PORT
+from ..network.ws_relay import PartyRelay
 from ..protocol.token_codec import PartyToken, create_token
 from ..protocol.message_types import SkinSelection
 from ..discovery.lobby_matcher import LobbyMatcher
@@ -37,10 +39,11 @@ class PartyManager:
 
         self.party_state = PartyState()
 
-        # Networking
+        # Networking — either a LAN server (host) or a relay client (client)
         self._my_key: Optional[bytes] = None
         self._my_token: Optional[PartyToken] = None
-        self._relay: Optional[PartyRelay] = None
+        self._relay: Optional[Union[PartyLANServer, PartyRelay]] = None
+        self._is_host: bool = False
 
         # Discovery
         self._lobby_matcher: Optional[LobbyMatcher] = None
@@ -71,12 +74,20 @@ class PartyManager:
         self._on_state_change = on_state_change
         self._on_peer_update = on_peer_update
 
-    async def enable(self) -> str:
-        """Enable party mode: generate token and connect to relay room."""
+    async def enable(self, host_ip: str = "", host_port: int = DEFAULT_PORT) -> str:
+        """Enable party mode as HOST: start a local WebSocket server.
+
+        Args:
+            host_ip: IP address to advertise in the token (e.g. Hamachi IP).
+            host_port: Port to listen on.
+
+        Returns:
+            The generated party token string.
+        """
         if self.party_state.enabled:
             return self.party_state.my_token or ""
 
-        log.info("[PARTY] Enabling party mode...")
+        log.info("[PARTY] Enabling party mode (LAN host)...")
 
         try:
             self._lobby_matcher = LobbyMatcher(self.lcu, self.state)
@@ -91,34 +102,42 @@ class PartyManager:
             self.party_state.my_summoner_id = my_summoner_id
             self.party_state.my_summoner_name = my_summoner_name
 
-            # Generate key and token
+            # Start the local LAN server
+            self._relay = PartyLANServer(host="0.0.0.0", port=host_port)
+            self._relay.set_on_members_changed(self._on_relay_members_changed)
+            self._is_host = True
+
+            if not await self._relay.start():
+                raise RuntimeError(
+                    f"Failed to start party server on port {host_port}. "
+                    f"Is another instance running?"
+                )
+
+            # Host joins its own room
+            await self._relay.join(my_summoner_id, my_summoner_name)
+
+            # Generate key and token with host IP/port
             self._my_key = secrets.token_bytes(32)
             self._my_token = create_token(
                 summoner_id=my_summoner_id,
                 encryption_key=self._my_key,
+                host_ip=host_ip,
+                host_port=host_port,
             )
 
             token_str = self._my_token.encode()
             self.party_state.my_token = token_str
             self.party_state.enabled = True
 
-            # Connect to relay room
-            room_key = compute_room_key(my_summoner_id, self._my_key)
-            self._relay = PartyRelay(room_key)
-            self._relay.set_on_members_changed(self._on_relay_members_changed)
-
-            if await self._relay.connect():
-                await self._relay.join(my_summoner_id, my_summoner_name)
-                log.info(f"[PARTY] Connected to relay room {room_key[:8]}...")
-            else:
-                log.warning("[PARTY] Relay connection failed, party mode limited")
-
             # Start background tasks
             self._running = True
             self._lobby_check_task = asyncio.create_task(self._lobby_check_loop())
             self._skin_broadcast_task = asyncio.create_task(self._skin_broadcast_loop())
 
-            log.info(f"[PARTY] Party mode enabled. Token: {token_str[:20]}...")
+            log.info(
+                f"[PARTY] Party mode enabled (LAN host on {host_ip}:{host_port}). "
+                f"Token: {token_str[:20]}..."
+            )
             self._notify_state_change()
             return token_str
 
@@ -128,7 +147,7 @@ class PartyManager:
             raise RuntimeError(f"Failed to enable party mode: {e}")
 
     async def disable(self):
-        """Disable party mode."""
+        """Disable party mode (stop server or disconnect from host)."""
         log.info("[PARTY] Disabling party mode...")
         self._running = False
 
@@ -147,6 +166,7 @@ class PartyManager:
             await self._relay.disconnect()
             self._relay = None
 
+        self._is_host = False
         self.party_state.clear_all()
         self._my_key = None
         self._my_token = None
@@ -155,7 +175,11 @@ class PartyManager:
         self._notify_state_change()
 
     async def add_peer(self, token_str: str) -> Tuple[bool, Optional[str]]:
-        """Join another player's party room by pasting their token."""
+        """Join another player's party by connecting directly to their LAN server.
+
+        If we are currently hosting, we stop our server and become a client
+        of the host specified in the token.
+        """
         if not self.party_state.enabled:
             return False, "Party mode not enabled"
 
@@ -168,36 +192,22 @@ class PartyManager:
             if token.summoner_id == self.party_state.my_summoner_id:
                 return False, "You cannot add yourself"
 
-            # Check if peer is already in our room (they joined us)
+            # Check if peer is already in our room
             if self._relay and self._relay.connected:
                 for member in self._relay.members:
                     if member.get("summoner_id") == token.summoner_id:
                         log.info(f"[PARTY] Peer {token.summoner_id} is already in our room")
                         return True, None
 
-            # Check if we're already in the target room
-            target_room_key = compute_room_key(token.summoner_id, token.encryption_key)
-            if self._relay and self._relay.room_key == target_room_key:
-                log.info(f"[PARTY] Already in peer's room")
-                return True, None
+            # v3 token: direct LAN connection
+            if token.version >= 3 and token.host_ip:
+                return await self._join_lan_host(token)
 
-            # Disconnect from current room and join the host's room
-            if self._relay:
-                await self._relay.disconnect()
-
-            self._relay = PartyRelay(target_room_key)
-            self._relay.set_on_members_changed(self._on_relay_members_changed)
-
-            if not await self._relay.connect():
-                return False, "Failed to connect to relay"
-
-            await self._relay.join(
-                self.party_state.my_summoner_id,
-                self.party_state.my_summoner_name,
+            # v2/v1 token: try legacy relay (will likely fail without RELAY_URL)
+            return False, (
+                "This token uses an older format that requires a relay server. "
+                "Ask your friend to update Rose and generate a new token."
             )
-
-            log.info(f"[PARTY] Joined party room {target_room_key[:8]}...")
-            return True, None
 
         except ValueError as e:
             error_str = str(e)
@@ -207,6 +217,38 @@ class PartyManager:
         except Exception as e:
             log.error(f"[PARTY] Failed to join party: {e}")
             return False, f"Unexpected error: {e}"
+
+    async def _join_lan_host(self, token: PartyToken) -> Tuple[bool, Optional[str]]:
+        """Connect directly to a LAN host's WebSocket server."""
+        host_url = f"ws://{token.host_ip}:{token.host_port}"
+        log.info(f"[PARTY] Connecting to LAN host at {host_url}")
+
+        # If we're currently hosting, stop our server
+        if self._relay:
+            await self._relay.disconnect()
+            self._relay = None
+            self._is_host = False
+
+        # Create a WebSocket relay client pointing at the host
+        self._relay = PartyRelay(room_key="lan-direct")
+        self._relay.set_on_members_changed(self._on_relay_members_changed)
+
+        # Override the relay URL to point at the LAN host
+        if not await self._relay.connect_to(host_url):
+            self._relay = None
+            return False, (
+                f"Failed to connect to {token.host_ip}:{token.host_port}. "
+                f"Make sure your friend's Rose is running and "
+                f"you're on the same network (Hamachi/Tailscale/LAN)."
+            )
+
+        await self._relay.join(
+            self.party_state.my_summoner_id,
+            self.party_state.my_summoner_name,
+        )
+
+        log.info(f"[PARTY] Joined LAN party at {host_url}")
+        return True, None
 
     async def remove_peer(self, summoner_id: int):
         """Remove a peer (not really applicable in shared room model, but kept for UI)."""

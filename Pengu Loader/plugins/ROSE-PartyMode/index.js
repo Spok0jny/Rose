@@ -33,6 +33,11 @@
     peers: [],
   };
 
+  // Network interfaces cache
+  let networkInterfaces = [];
+  let selectedIP = "";
+  let selectedPort = 7865;
+
   /**
    * Escape HTML special characters to prevent XSS
    */
@@ -486,6 +491,93 @@
       pointer-events: none;
     }
 
+    /* Network config section */
+    .network-config {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .network-config-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .network-config-label {
+      color: #a09b8c;
+      font-family: var(--font-body), Arial, sans-serif;
+      font-size: 11px;
+      min-width: 35px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .network-select,
+    .port-input {
+      flex: 1;
+      background: rgba(0,0,0,.7);
+      border: thin solid #3c3c41;
+      padding: 6px 8px;
+      color: #f0e6d2;
+      font-family: var(--font-body), Arial, sans-serif;
+      font-size: 12px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    .network-select {
+      cursor: pointer;
+    }
+
+    .network-select:focus,
+    .port-input:focus {
+      border-color: #c89b3c;
+    }
+
+    .port-input {
+      max-width: 80px;
+      text-align: center;
+    }
+
+    .network-select option {
+      background: #1e2328;
+      color: #f0e6d2;
+    }
+
+    .manual-ip-input {
+      flex: 1;
+      background: rgba(0,0,0,.7);
+      border: thin solid #3c3c41;
+      padding: 6px 8px;
+      color: #f0e6d2;
+      font-family: var(--font-body), Arial, sans-serif;
+      font-size: 12px;
+      outline: none;
+      display: none;
+    }
+
+    .manual-ip-input:focus {
+      border-color: #c89b3c;
+    }
+
+    .manual-ip-input.visible {
+      display: block;
+    }
+
+    .host-info {
+      color: #5b5a56;
+      font-family: var(--font-body), Arial, sans-serif;
+      font-size: 10px;
+      margin-top: 4px;
+      letter-spacing: .02em;
+    }
+
+    .host-info .host-address {
+      color: #0acbe6;
+    }
+
     .spinner {
       display: inline-block;
       width: 12px;
@@ -683,7 +775,24 @@
         <span class="party-status offline">Offline</span>
       </div>
       <div class="party-content">
-        <div class="party-description">Share your skins with friends in the same lobby. Enable party mode and exchange tokens to connect.</div>
+        <div class="party-description">Share your skins with friends on the same network (Hamachi / Tailscale / LAN). Enable to host a party, then share your token.</div>
+
+        <div class="party-section" id="party-network-section">
+          <div class="party-section-title">Network Settings</div>
+          <div class="network-config">
+            <div class="network-config-row">
+              <span class="network-config-label">IP</span>
+              <select class="network-select" id="party-ip-select">
+                <option value="">Detecting...</option>
+              </select>
+            </div>
+            <input type="text" class="manual-ip-input" id="party-manual-ip" placeholder="Enter IP address manually...">
+            <div class="network-config-row">
+              <span class="network-config-label">Port</span>
+              <input type="number" class="port-input" id="party-port-input" value="7865" min="1024" max="65535">
+            </div>
+          </div>
+        </div>
 
         <div class="party-section" id="party-toggle-section">
           <button class="party-toggle-btn enable" id="party-toggle-btn">
@@ -732,6 +841,46 @@
         isVisible = false;
         partyPanel.classList.remove("visible");
       });
+
+      // IP dropdown change handler
+      const ipSelect = panel.querySelector("#party-ip-select");
+      if (ipSelect) {
+        ipSelect.addEventListener("change", (e) => {
+          const manualInput = panel.querySelector("#party-manual-ip");
+          if (e.target.value === "__manual__") {
+            manualInput.classList.add("visible");
+            manualInput.focus();
+            selectedIP = manualInput.value;
+          } else {
+            manualInput.classList.remove("visible");
+            selectedIP = e.target.value;
+          }
+        });
+      }
+
+      // Manual IP input handler
+      const manualIpInput = panel.querySelector("#party-manual-ip");
+      if (manualIpInput) {
+        manualIpInput.addEventListener("input", (e) => {
+          selectedIP = e.target.value.trim();
+        });
+      }
+
+      // Port input handler
+      const portInput = panel.querySelector("#party-port-input");
+      if (portInput) {
+        portInput.addEventListener("change", (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val) && val >= 1024 && val <= 65535) {
+            selectedPort = val;
+          } else {
+            e.target.value = selectedPort;
+          }
+        });
+      }
+
+      // Request network interfaces to populate dropdown
+      sendBridgeMessage({ type: "party-get-interfaces" });
     } catch (e) {
       console.error(`${LOG_PREFIX} Failed to create panel:`, e);
       partyPanel = null;
@@ -763,6 +912,7 @@
     const tokenSection = document.getElementById("party-token-section");
     const addSection = document.getElementById("party-add-section");
     const peersSection = document.getElementById("party-peers-section");
+    const networkSection = document.getElementById("party-network-section");
     const tokenDisplay = document.getElementById("party-token-display");
     const peerCountEl = document.getElementById("peer-count");
     const peersList = document.getElementById("peers-list");
@@ -774,6 +924,8 @@
       toggleBtn.className = "party-toggle-btn disable";
       toggleBtn.textContent = "Disable Party Mode";
 
+      // Hide network config when party is running, show token/peers
+      if (networkSection) networkSection.style.display = "none";
       tokenSection.style.display = "block";
       addSection.style.display = "block";
       peersSection.style.display = "block";
@@ -837,6 +989,8 @@
       tokenSection.style.display = "none";
       addSection.style.display = "none";
       peersSection.style.display = "none";
+      // Show network config when party is off
+      if (networkSection) networkSection.style.display = "block";
     }
 
     updateButtonState();
@@ -851,10 +1005,26 @@
       toggleBtn.innerHTML = '<span class="spinner"></span> Disabling...';
       sendBridgeMessage({ type: "party-disable" });
     } else {
-      // Enable
+      // Enable - send selected IP and port
       toggleBtn.disabled = true;
-      toggleBtn.innerHTML = '<span class="spinner"></span> Enabling...';
-      sendBridgeMessage({ type: "party-enable" });
+      toggleBtn.innerHTML = '<span class="spinner"></span> Starting server...';
+
+      // Resolve the IP: manual input takes priority
+      const ipSelect = document.getElementById("party-ip-select");
+      const manualIp = document.getElementById("party-manual-ip");
+      let hostIp = selectedIP;
+      if (ipSelect && ipSelect.value === "__manual__" && manualIp) {
+        hostIp = manualIp.value.trim();
+      }
+
+      const portInput = document.getElementById("party-port-input");
+      const hostPort = portInput ? parseInt(portInput.value, 10) || 7865 : 7865;
+
+      sendBridgeMessage({
+        type: "party-enable",
+        host_ip: hostIp,
+        host_port: hostPort,
+      });
     }
   }
 
@@ -1002,6 +1172,45 @@
           startGamePhaseMonitor();
         }
         break;
+
+      case "party-interfaces":
+        networkInterfaces = data.interfaces || [];
+        populateIPDropdown(networkInterfaces);
+        break;
+    }
+  }
+
+  function populateIPDropdown(interfaces) {
+    const select = document.getElementById("party-ip-select");
+    if (!select) return;
+
+    select.innerHTML = "";
+
+    if (interfaces.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "127.0.0.1";
+      opt.textContent = "localhost (127.0.0.1)";
+      select.appendChild(opt);
+    } else {
+      for (const iface of interfaces) {
+        const opt = document.createElement("option");
+        opt.value = iface.ip;
+        const typeLabel = iface.type.charAt(0).toUpperCase() + iface.type.slice(1);
+        opt.textContent = `${iface.ip} — ${iface.name} (${typeLabel})`;
+        select.appendChild(opt);
+      }
+    }
+
+    // Add manual entry option at the end
+    const manualOpt = document.createElement("option");
+    manualOpt.value = "__manual__";
+    manualOpt.textContent = "Enter IP manually...";
+    select.appendChild(manualOpt);
+
+    // Default: select first VPN interface, or first interface
+    if (interfaces.length > 0) {
+      selectedIP = interfaces[0].ip;
+      select.value = interfaces[0].ip;
     }
   }
 
