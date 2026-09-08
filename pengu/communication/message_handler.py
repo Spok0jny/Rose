@@ -243,6 +243,8 @@ class MessageHandler:
             self._handle_party_remove_peer(payload)
         elif payload_type == "party-get-state":
             self._handle_party_get_state(payload)
+        elif payload_type == "party-get-interfaces":
+            self._handle_party_get_interfaces(payload)
         elif payload.get("skin"):
             # Handle skin detection message
             self._handle_skin_detection(payload)
@@ -2650,9 +2652,31 @@ class MessageHandler:
 
     # ==================== Party Mode Handlers ====================
 
+    def _handle_party_get_interfaces(self, payload: dict) -> None:
+        """Handle request for available network interfaces (for Party Mode host IP)"""
+        try:
+            from party.network.lan_server import get_network_interfaces
+            interfaces = get_network_interfaces()
+            log.info(f"[PARTY] Network interfaces requested by UI: found {len(interfaces)} interfaces {[i['ip'] for i in interfaces]}")
+            response_payload = {
+                "type": "party-interfaces",
+                "interfaces": interfaces,
+            }
+            self._send_response(json.dumps(response_payload))
+        except Exception as e:
+            log.error(f"[PARTY] Error getting network interfaces: {e}", exc_info=True)
+            self._send_response(json.dumps({
+                "type": "party-interfaces",
+                "interfaces": [{"name": "Loopback (localhost)", "ip": "127.0.0.1", "type": "loopback"}],
+            }))
+
     def _handle_party_enable(self, payload: dict) -> None:
         """Handle party mode enable request"""
         try:
+            host_ip = payload.get("host_ip", "")
+            host_port = int(payload.get("host_port", 7865))
+            log.info(f"[PARTY] UI requested party-enable with host_ip='{host_ip}', host_port={host_port}")
+
             party_manager = getattr(self.shared_state, 'party_manager', None)
             if not party_manager:
                 # Initialize party manager
@@ -2662,6 +2686,7 @@ class MessageHandler:
                 # Get LCU instance from skin_scraper
                 lcu = self.skin_scraper.lcu if self.skin_scraper else None
                 if not lcu:
+                    log.warning("[PARTY] LCU not available when trying to enable party mode")
                     response_payload = {
                         "type": "party-enabled",
                         "success": False,
@@ -2681,7 +2706,7 @@ class MessageHandler:
 
             async def do_enable():
                 try:
-                    token = await party_manager.enable()
+                    token = await party_manager.enable(host_ip=host_ip, host_port=host_port)
                     self.shared_state.party_mode_enabled = True
                     self.shared_state.party_token = token
                     response_payload = {
@@ -2690,9 +2715,9 @@ class MessageHandler:
                         "token": token,
                     }
                     self._send_response(json.dumps(response_payload))
-                    log.info(f"[PARTY] Party mode enabled, token: {token[:30]}...")
+                    log.info(f"[PARTY] Party mode enabled successfully! Token: {token[:30]}...")
                 except Exception as e:
-                    log.error(f"[PARTY] Failed to enable party mode: {e}")
+                    log.error(f"[PARTY] Failed to enable party mode: {e}", exc_info=True)
                     response_payload = {
                         "type": "party-enabled",
                         "success": False,
@@ -2707,7 +2732,7 @@ class MessageHandler:
                 log.warning("[PARTY] No event loop available")
 
         except Exception as e:
-            log.error(f"[PARTY] Error handling party enable: {e}")
+            log.error(f"[PARTY] Error handling party enable: {e}", exc_info=True)
             response_payload = {
                 "type": "party-enabled",
                 "success": False,
