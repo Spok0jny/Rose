@@ -1,4 +1,6 @@
 @echo off
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 title Rose (Debug Console - Live Logs)
 cd /d "c:\Users\rbast\source\repos\Rose"
 echo ================================================================
