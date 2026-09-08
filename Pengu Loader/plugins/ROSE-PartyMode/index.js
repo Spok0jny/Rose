@@ -649,7 +649,7 @@
       transform: translateX(-50%);
       width: 32px;
       height: 32px;
-      background-image: url("http://127.0.0.1:${BRIDGE_PORT}/asset/golden_rose.png");
+      background-image: url("${GOLDEN_ROSE_ICON}");
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
@@ -679,7 +679,7 @@
       min-height: 15px;
       flex-shrink: 0;
       margin-right: 5px;
-      background-image: url("http://127.0.0.1:${BRIDGE_PORT}/asset/golden_rose.png");
+      background-image: url("${GOLDEN_ROSE_ICON}");
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
