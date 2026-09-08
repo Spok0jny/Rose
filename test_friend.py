@@ -96,7 +96,7 @@ async def main():
         {"name": "Spirit Blossom Ahri", "champion_id": 103, "skin_id": 103027},
         {"name": "PROJECT: Vayne", "champion_id": 67, "skin_id": 67011},
         {"name": "Star Guardian Jinx", "champion_id": 222, "skin_id": 222004},
-        {"name": "God-King Darius", "champion_id": 122, "skin_id": 122014},
+        {"name": "God-King Darius", "champion_id": 122, "skin_id": 122015},
     ]
 
     print("-" * 65)
