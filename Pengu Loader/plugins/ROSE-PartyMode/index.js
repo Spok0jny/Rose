@@ -809,10 +809,10 @@
         </div>
 
         <div class="party-section" id="party-add-section" style="display: none;">
-          <div class="party-section-title">Add Friend</div>
+          <div class="party-section-title">Join Party</div>
           <div class="add-peer-container">
             <input type="text" class="add-peer-input" id="add-peer-input" placeholder="Paste friend's token here...">
-            <button class="add-btn" id="add-peer-btn">Add</button>
+            <button class="add-btn" id="add-peer-btn">Join</button>
           </div>
           <div id="add-peer-message"></div>
         </div>
@@ -1135,7 +1135,7 @@
         if (addInput) addInput.disabled = false;
         if (addBtn) {
           addBtn.disabled = false;
-          addBtn.textContent = "Add";
+          addBtn.textContent = "Join";
         }
         const unlockToggleBtn = document.getElementById("party-toggle-btn");
         if (unlockToggleBtn) unlockToggleBtn.disabled = false;
