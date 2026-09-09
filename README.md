@@ -21,7 +21,7 @@ Fork of Rose with support for favorite skins, chroma selection, dual dice roller
 - Removing all favorite chromas from a skin automatically untags the skin.
 - Dual dice roller in champion select:
   - Normal dice: rolls across all skins.
-  - Golden dice: rolls only from your favorites list.
+  - Golden star dice: rolls only from your favorites list.
  
 Note: You can use RMB to tag/untag skins/chromas as favorites in quickplay screen. 
 
