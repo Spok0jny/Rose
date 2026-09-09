@@ -243,6 +243,8 @@ class MessageHandler:
             self._handle_party_enable(payload)
         elif payload_type == "party-disable":
             self._handle_party_disable(payload)
+        elif payload_type == "party-join":
+            self._handle_party_join(payload)
         elif payload_type == "party-add-peer":
             self._handle_party_add_peer(payload)
         elif payload_type == "party-remove-peer":
@@ -2837,6 +2839,74 @@ class MessageHandler:
 
         except Exception as e:
             log.error(f"[PARTY] Error handling party disable: {e}", exc_info=True)
+
+    def _handle_party_join(self, payload: dict) -> None:
+        """Handle party join request (guest connecting to LAN host room)"""
+        try:
+            token = payload.get("token", "")
+            if not token:
+                response_payload = {
+                    "type": "party-joined",
+                    "success": False,
+                    "error": "No token provided",
+                }
+                self._send_response(json.dumps(response_payload))
+                return
+
+            log.info(f"[PARTY] UI requested party-join with token: {token[:25]}...")
+            party_manager = getattr(self.shared_state, 'party_manager', None)
+            if not party_manager:
+                from party.core.party_manager import PartyManager
+
+                lcu = self.skin_scraper.lcu if self.skin_scraper else None
+                if not lcu:
+                    log.warning("[PARTY] LCU not available when trying to join party")
+                    response_payload = {
+                        "type": "party-joined",
+                        "success": False,
+                        "error": "LCU not available - is League client running?",
+                    }
+                    self._send_response(json.dumps(response_payload))
+                    return
+
+                party_manager = PartyManager(lcu, self.shared_state, self.injection_manager)
+                self.shared_state.party_manager = party_manager
+                party_manager.set_callbacks(
+                    on_state_change=lambda state: self.broadcaster.broadcast_party_state()
+                )
+
+            import asyncio
+
+            async def do_join():
+                try:
+                    success, error = await party_manager.join(token)
+                    self.shared_state.party_mode_enabled = success
+                    response_payload = {
+                        "type": "party-joined",
+                        "success": success,
+                        "error": error,
+                    }
+                    self._send_response(json.dumps(response_payload))
+                    if success:
+                        log.info("[PARTY] Party joined successfully")
+                    else:
+                        log.warning(f"[PARTY] Failed to join party: {error}")
+                except Exception as e:
+                    log.error(f"[PARTY] Failed to join party: {e}", exc_info=True)
+                    response_payload = {
+                        "type": "party-joined",
+                        "success": False,
+                        "error": str(e),
+                    }
+                    self._send_response(json.dumps(response_payload))
+
+            if self.websocket_server and self.websocket_server.loop:
+                asyncio.run_coroutine_threadsafe(do_join(), self.websocket_server.loop)
+            else:
+                log.warning("[PARTY] No event loop available")
+
+        except Exception as e:
+            log.error(f"[PARTY] Error handling party join: {e}", exc_info=True)
 
     def _handle_party_add_peer(self, payload: dict) -> None:
         """Handle add peer request"""
