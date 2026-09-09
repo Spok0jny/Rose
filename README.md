@@ -1,3 +1,40 @@
+# 🌹 Rose - Skin Changer for LoL
+
+Fork of Rose with support for favorite skins, chroma selection, dual dice roller and LAN party mode.
+
+---
+
+## Download & Run
+
+1. Go to [Releases](https://github.com/Spok0jny/Rose/releases) and download `Rose-v1.2.14-party-beta.zip`.
+2. Extract the archive anywhere on your PC.
+3. Run `Rose.exe`.
+4. Open League of Legends.
+
+---
+
+## Features added in this fork
+
+### Favorite skins & chromas
+- Star icons in the Quickplay carousel to mark favorite skins.
+- Favorite specific chromas directly inside the chroma panel.
+- Removing all favorite chromas from a skin automatically untags the skin.
+- Dual dice roller in champion select:
+  - Normal dice: rolls across all skins.
+  - Golden dice: rolls only from your favorites list.
+
+### Party Mode (LAN / P2P)
+Direct skin sharing with friends in the same lobby without external servers.
+
+- Works over local network, or virtual LAN (Radmin VPN / Hamachi) if playing over the internet.
+- **Host**: Click the party button in the bottom right social bar, choose your IP, click **Host Party**, and send the token to your friend.
+- **Join**: Switch to the **Join Party** tab, paste the token, and click **Join Party**.
+- During champion select, selections and chromas sync automatically. Both skins are injected into the match when the game starts.
+
+---
+
+## ORIGINAL README:
+
 # 🌹 Rose - Effortless Skin Changer for LoL
 
 <div align="center">
