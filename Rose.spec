@@ -222,6 +222,7 @@ hiddenimports = [
     'utils.core.validation',
     'utils.core.normalization',
     'utils.core.historic',
+    'utils.core.favorites',
     'utils.system',
     'utils.system.admin_utils',
     'utils.system.win32_base',
