@@ -22,12 +22,19 @@ Fork of Rose with support for favorite skins, chroma selection, dual dice roller
 - Dual dice roller in champion select:
   - Normal dice: rolls across all skins.
   - Golden dice: rolls only from your favorites list.
+ 
+Note: You can use RMB to tag/untag skins/chromas as favorites in quickplay screen. 
 
 ### Party Mode (LAN / P2P)
 Direct skin sharing with friends in the same lobby without external servers.
 
 - Works over local network, or virtual LAN (Radmin VPN / Hamachi) if playing over the internet.
-- **Host**: Click the party button in the bottom right social bar, choose your IP, click **Host Party**, and send the token to your friend.
+- Download Radmin VPN with your friend.
+- Host create a network
+- Friend joins the network
+
+  In game:
+- **Host**: Click the party button in the bottom right social bar, choose your Radmin IP, click **Host Party**, and send the token to your friend.
 - **Join**: Switch to the **Join Party** tab, paste the token, and click **Join Party**.
 - During champion select, selections and chromas sync automatically. Both skins are injected into the match when the game starts.
 
