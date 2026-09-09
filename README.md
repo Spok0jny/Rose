@@ -38,6 +38,18 @@ Direct skin sharing with friends in the same lobby without external servers.
 - **Join**: Switch to the **Join Party** tab, paste the token, and click **Join Party**.
 - During champion select, selections and chromas sync automatically. Both skins are injected into the match when the game starts.
 
+### ⚠️ Troubleshooting: Ping Spikes with Virtual LAN (Radmin VPN)
+If you or your friends experience high ping spikes in League of Legends while Radmin VPN is active, Windows might be temporarily prioritizing the virtual VPN adapter over your main internet connection. You can permanently fix this in 30 seconds:
+
+1. Press `Win + R`, type `ncpa.cpl` and press Enter to open **Network Connections**.
+2. Right-click the **Radmin VPN** adapter and select **Properties**.
+3. Double-click **Internet Protocol Version 4 (TCP/IPv4)**, then click the **Advanced...** button at the bottom.
+4. At the bottom of the window, uncheck **Automatic metric** and set the **Interface metric** to `500`.
+5. Click **OK** on all open windows to save.
+
+> Setting the metric to `500` ensures Windows always routes League of Legends traffic through your real home network, preventing any lag or routing conflicts.
+
+
 ---
 
 ## ORIGINAL README:
