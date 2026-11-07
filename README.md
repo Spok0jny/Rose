@@ -1,5 +1,8 @@
 # 🌹 Rose - Effortless Skin Changer for LoL
 
+> [!WARNING]
+> **LEGACY / ARCHIVED BRANCH**: This branch (`legacy/party-mode`) is archived and no longer maintained. Please refer to `main` or active feature branches.
+
 <div align="center">
 
   <img src="./assets/icon.png" alt="Rose Icon" width="128" height="128">
