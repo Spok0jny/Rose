@@ -1,5 +1,8 @@
 # 🌹 Rose - Skin Changer for LoL
 
+> [!WARNING]
+> **LEGACY / ARCHIVED RELEASE**: This branch (`legacy/v1.2.14-party-beta`) is an old archived release and is no longer maintained. Please use the `main` branch or active releases.
+
 Fork of Rose with support for favorite skins, chroma selection, dual dice roller and LAN party mode.
 
 ---
