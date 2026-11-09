@@ -364,6 +364,34 @@ class Broadcaster:
 
         self._send_message(json.dumps(payload))
 
+    def broadcast_competitive_state(
+        self, mode: Optional[str] = None, supported: Optional[bool] = None
+    ) -> None:
+        """Broadcast current competitive mode state to JavaScript plugins"""
+        if not self.websocket_server.loop or not self.websocket_server.connections:
+            return
+
+        current_mode = (
+            mode if mode is not None else getattr(self.shared_state, "competitive_mode", "off")
+        )
+        current_supported = (
+            supported
+            if supported is not None
+            else getattr(self.shared_state, "competitive_supported", False)
+        )
+
+        payload = {
+            "type": "competitive-state",
+            "mode": current_mode,
+            "supported": current_supported,
+        }
+        log.info(
+            "[SkinMonitor] Competitive state → mode='%s' supported=%s",
+            current_mode,
+            current_supported,
+        )
+        self._send_message(json.dumps(payload))
+
     def _send_message(self, message: str) -> None:
         """Send message to all connected clients"""
         try:

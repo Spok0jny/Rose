@@ -387,6 +387,20 @@ class MessageHandler:
             self._handle_select_one_mod(payload_type[len("select-"):], payload)
         elif payload_type == "select-other":
             self._handle_select_other(payload)
+        elif payload_type in {
+            "update-competitive-mode",
+            "update_competitive_mode",
+            "set-competitive-mode",
+            "set_competitive_mode",
+        }:
+            self._handle_update_competitive_mode(payload)
+        elif payload_type in {
+            "request-competitive-state",
+            "request_competitive_state",
+            "get-competitive-state",
+            "get_competitive_state",
+        }:
+            self._handle_request_competitive_state(payload)
         elif payload_type == "open-logs-folder":
             self._handle_open_logs_folder(payload)
         elif payload_type == "diagnostics-request":
@@ -2611,6 +2625,29 @@ class MessageHandler:
         }
         self._send_response(json.dumps(response_payload))
     
+    def _handle_update_competitive_mode(self, payload: dict) -> None:
+        """Handle competitive mode change from UI plugin"""
+        mode = payload.get("mode")
+        from config import COMPETITIVE_MODES, set_competitive_mode
+
+        if mode in COMPETITIVE_MODES:
+            self.shared_state.competitive_mode = mode
+            set_competitive_mode(mode)
+            log.info(f"[COMPETITIVE] Updated mode to: {mode}")
+            self.broadcaster.broadcast_competitive_state(
+                mode=self.shared_state.competitive_mode,
+                supported=self.shared_state.competitive_supported,
+            )
+        else:
+            log.warning(f"[COMPETITIVE] Invalid competitive mode received: {mode}")
+
+    def _handle_request_competitive_state(self, payload: dict) -> None:
+        """Handle request for current competitive state"""
+        self.broadcaster.broadcast_competitive_state(
+            mode=getattr(self.shared_state, "competitive_mode", "off"),
+            supported=getattr(self.shared_state, "competitive_supported", False),
+        )
+
     def _handle_open_logs_folder(self, payload: dict) -> None:
         """Handle open logs folder request"""
         try:
