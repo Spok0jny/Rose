@@ -24,7 +24,7 @@ from utils.core.paths import get_user_data_dir
 
 log = get_logger()
 
-OVERRIDE_PACKAGE_VERSION = "1.2.0"
+OVERRIDE_PACKAGE_VERSION = "1.3.0"
 SKIN_DATA_CLASS = 0x9B67E9F6  # fnv1a_lower("SkinCharacterDataProperties")
 RESOURCE_RESOLVER_CLASS = 0xEF3A0F33  # fnv1a_lower("ResourceResolver")
 ANIMATION_GRAPH_DATA_CLASS = 0xF5FB07C7  # fnv1a_lower("AnimationGraphData")
@@ -251,22 +251,41 @@ def create_base_override(
         characters = character_names(alias)
         mapped_count = 0
 
+        # Base animation data for main champion
+        main_char = characters[0] if characters else alias.lower()
+        p_main_anim0 = f"data/characters/{main_char}/animations/skin0.bin"
+        if not game_wad.has_path(p_main_anim0):
+            p_main_anim0 = f"assets/characters/{main_char}/animations/skin0.bin"
+        main_anim0_data = game_wad.read_path(p_main_anim0) if game_wad.has_path(p_main_anim0) else None
+
         for char in characters:
-            p0 = f"data/characters/{char}/skins/skin0.bin"
-            if not game_wad.has_path(p0):
-                p0 = f"assets/characters/{char}/skins/skin0.bin"
-            if not game_wad.has_path(p0):
+            p0 = None
+            for cand in (
+                f"data/characters/{char}/skins/skin0.bin",
+                f"assets/characters/{char}/skins/skin0.bin",
+                f"data/characters/{char}/skins/root.bin",
+                f"assets/characters/{char}/skins/root.bin",
+            ):
+                if game_wad.has_path(cand):
+                    p0 = cand
+                    break
+
+            if not p0:
                 continue
 
             skin0_data = game_wad.read_path(p0)
             if not skin0_data:
                 continue
 
-            # Check for base animation graph
+            # Check for base animation graph (with fallback to root or main champion)
             p_anim0 = f"data/characters/{char}/animations/skin0.bin"
             if not game_wad.has_path(p_anim0):
                 p_anim0 = f"assets/characters/{char}/animations/skin0.bin"
-            anim0_data = game_wad.read_path(p_anim0) if game_wad.has_path(p_anim0) else None
+            if not game_wad.has_path(p_anim0):
+                p_anim0 = f"data/characters/{char}/animations/root.bin"
+            if not game_wad.has_path(p_anim0):
+                p_anim0 = f"assets/characters/{char}/animations/root.bin"
+            anim0_data = game_wad.read_path(p_anim0) if game_wad.has_path(p_anim0) else main_anim0_data
 
             for skin_idx in range(1, 150):
                 pn = f"data/characters/{char}/skins/skin{skin_idx}.bin"

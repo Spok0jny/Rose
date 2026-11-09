@@ -229,6 +229,38 @@ class TestOverrideGenerator(unittest.TestCase):
         self.assertEqual(e_anim.path_hash, expected_anim_hash)
         self.assertEqual(struct.unpack("<I", e_anim.find_field(PROP_PATH_HASH).value.v)[0], expected_anim_hash)
 
+    def test_create_base_override_with_root_bin_fallback(self):
+        import zipfile
+        from injection.baseskin.wad import GameWad, ModWad, path_hash
+        from utils.competitive.override_generator import create_base_override
+
+        # Create a mock WAD with a champion that has a subcharacter using root.bin (Fiddlesticks effigy)
+        wad_path = self.wad_dir / "Fiddlesticks.wad.client"
+        empty_header = b"RW\x03\x00" + bytes(268)
+        mw = ModWad(empty_header)
+        mw.put(path_hash("data/characters/fiddlesticks/skins/skin0.bin"), b"FIDDLE_SKIN0")
+        mw.put(path_hash("data/characters/fiddlesticks/skins/skin1.bin"), b"FIDDLE_SKIN1")
+        mw.put(path_hash("data/characters/fiddlestickseffigy/skins/root.bin"), b"EFFIGY_ROOT")
+        mw.put(path_hash("data/characters/fiddlestickseffigy/skins/skin6.bin"), b"EFFIGY_SKIN6")
+        wad_path.write_bytes(mw.to_bytes())
+
+        pkg_path = create_base_override(9, self.game_dir, self.cache_dir)
+        self.assertIsNotNone(pkg_path)
+        self.assertTrue(pkg_path.is_file())
+
+        with zipfile.ZipFile(pkg_path, "r") as zf:
+            mod_wad_bytes = zf.read("WAD/Fiddlesticks.wad.client")
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".wad", delete=False) as tf:
+                tf.write(mod_wad_bytes)
+                tname = tf.name
+            gw = GameWad(Path(tname))
+            # Main champion skin1 overridden
+            self.assertTrue(gw.has_path("data/characters/fiddlesticks/skins/skin1.bin"))
+            # Subcharacter with root.bin overridden!
+            self.assertTrue(gw.has_path("data/characters/fiddlestickseffigy/skins/skin6.bin"))
+
+
 
 def from_fields(type_hash, path_hash, fields):
     from injection.baseskin.propbin import Entry
