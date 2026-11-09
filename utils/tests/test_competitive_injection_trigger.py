@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for competitive mode injection trigger and stage plan integration."""
+"""Unit tests for competitive mode injection trigger, hook, and stage plan integration."""
 
 import tempfile
 import unittest
@@ -15,7 +15,9 @@ from injection.core.stage_plan import (
     prepare_plan,
 )
 from state.core.shared_state import SharedState
+from threads.handlers.champ_select_reset import perform_champ_select_reset
 from threads.handlers.injection_trigger import InjectionTrigger
+from utils.competitive.injection_hook import prepare_competitive_mods
 
 
 class TestCompetitiveInjectionTrigger(unittest.TestCase):
@@ -71,6 +73,9 @@ class TestCompetitiveInjectionTrigger(unittest.TestCase):
         self.assertEqual(comp_steps[0].champion_id, 103)
         self.assertEqual(comp_steps[0].package_path, self.fake_override_path)
 
+        # Confirm packages were saved to state for injection fallback
+        self.assertEqual(self.state.competitive_override_packages, [self.fake_override_path])
+
     @patch("utils.competitive.override_generator.get_or_create_base_override")
     def test_staging_plan_omits_competitive_when_mode_off(self, mock_get_override):
         self.state.competitive_mode = "off"
@@ -117,6 +122,43 @@ class TestCompetitiveInjectionTrigger(unittest.TestCase):
             self.assertIsNotNone(names)
             self.assertEqual(len(names), 1)
             self.assertEqual(names[0], "base_override_103")
+
+    @patch("utils.competitive.injection_hook.get_or_create_base_override")
+    def test_prepare_competitive_mods_with_session(self, mock_get_override):
+        mock_get_override.return_value = self.fake_override_path
+        self.state.lcu = self.mock_lcu
+
+        with tempfile.TemporaryDirectory() as td:
+            mods_dir = Path(td)
+            injector = MagicMock()
+            injector.mods_dir = mods_dir
+            injector.game_dir = Path("C:/FakeGame")
+
+            names = prepare_competitive_mods(self.state, injector, mods_dir=mods_dir)
+            self.assertEqual(names, ["base_override_103"])
+            self.assertTrue((mods_dir / "base_override_103").exists())
+            self.assertEqual(self.state.competitive_override_packages, [self.fake_override_path])
+
+    def test_prepare_competitive_mods_fallback_when_session_unavailable(self):
+        # When ChampSelect transitions to GameStart, LCU session is None
+        self.state.lcu = MagicMock()
+        self.state.lcu.session = None
+        self.state.competitive_override_packages = [self.fake_override_path]
+
+        with tempfile.TemporaryDirectory() as td:
+            mods_dir = Path(td)
+            injector = MagicMock()
+            injector.mods_dir = mods_dir
+
+            names = prepare_competitive_mods(self.state, injector, mods_dir=mods_dir)
+            self.assertEqual(names, ["base_override_103"])
+            self.assertTrue((mods_dir / "base_override_103").exists())
+
+    def test_champ_select_reset_clears_cached_packages(self):
+        self.state.competitive_override_packages = [self.fake_override_path]
+        perform_champ_select_reset(self.state, self.mock_lcu)
+        self.assertEqual(self.state.competitive_override_packages, [])
+        self.assertEqual(self.state.lcu, self.mock_lcu)
 
 
 if __name__ == "__main__":

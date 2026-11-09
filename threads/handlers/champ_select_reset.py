@@ -23,6 +23,8 @@ def perform_champ_select_reset(state, lcu) -> bool:
     state.champ_select_generation = getattr(state, "champ_select_generation", 0) + 1
 
     log.info("[reset] Entering ChampSelect - resetting state for new game")
+    if lcu:
+        state.lcu = lcu
     state.last_hovered_skin_key = None
     state.last_hovered_skin_id = None
     state.last_hovered_skin_slug = None
@@ -53,6 +55,7 @@ def perform_champ_select_reset(state, lcu) -> bool:
     state.selected_custom_mod = None
     state.champion_exchange_triggered = False
     state.reset_skin_notification = True
+    state.competitive_override_packages = []
 
     try:
         state.processed_action_ids.clear()

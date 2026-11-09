@@ -627,11 +627,15 @@ class InjectionTrigger:
             steps = []
             injector = getattr(self.injection_manager, "injector", None) if self.injection_manager else None
             game_path = getattr(injector, "game_dir", None) if injector else None
+            packages = []
             for target_id in sorted(target_ids):
                 pkg = get_or_create_base_override(target_id, game_path=game_path, lcu_client=self.lcu)
                 if pkg and pkg.is_file():
                     steps.append(CompetitiveStep(champion_id=target_id, package_path=pkg))
+                    packages.append(pkg)
 
+            if hasattr(self.state, "competitive_override_packages"):
+                self.state.competitive_override_packages = packages
             return tuple(steps)
         except Exception as e:
             log.warning(f"[COMPETITIVE] Failed to plan competitive overrides: {e}")
@@ -1743,6 +1747,19 @@ class InjectionTrigger:
                             log.info(f"[INJECT] Including {len(party_mod_names)} party/extra mod(s): {'/'.join(party_mod_names)}")
                 except Exception as e:
                     log.debug(f"[INJECT] Party injection hook not used: {e}")
+
+            # Add competitive mode base skin overrides if active
+            comp_mode = getattr(self.state, "competitive_mode", "off")
+            comp_supp = getattr(self.state, "competitive_supported", False)
+            if comp_mode != "off" and comp_supp:
+                try:
+                    from utils.competitive.injection_hook import prepare_competitive_mods
+                    comp_mods = prepare_competitive_mods(self.state, injector, lcu_client=self.lcu)
+                    if comp_mods:
+                        mod_folder_names.extend(comp_mods)
+                        log.info(f"[INJECT] Including {len(comp_mods)} competitive override(s): {', '.join(comp_mods)}")
+                except Exception as e:
+                    log.debug(f"[INJECT] Competitive injection hook not used: {e}")
 
             # Check if we have any mods to inject
             if not mod_folder_names:

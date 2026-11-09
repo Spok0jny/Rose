@@ -7,7 +7,7 @@ Shared state for the application
 # Standard library imports
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, List, Optional, TypedDict
 
 if TYPE_CHECKING:
     from injection.mods.mod_source import ModSource
@@ -84,7 +84,9 @@ class SharedState:
     current_game_mode: Optional[str] = None  # Current game mode (ARAM, CLASSIC, SWIFT_PLAY, etc.)
     current_map_id: Optional[int] = None
     competitive_mode: str = "off"
-    competitive_supported: bool = False  # Current map ID (12 = ARAM, 11 = SR)
+    competitive_supported: bool = False
+    competitive_override_packages: list = field(default_factory=list)  # Staged base override package paths
+    lcu: Optional[Any] = None  # Reference to LCU client instance
     current_queue_id: Optional[int] = None  # Current queue ID (2400 = ARAM: Mayhem, etc.)
     chroma_panel_skin_name: Optional[str] = None  # Base skin name when panel was opened (to avoid re-detecting same skin)
     is_swiftplay_mode: bool = False  # Flag to indicate if we're in Swiftplay mode

@@ -44,44 +44,55 @@ def prepare_competitive_mods(
 
     lcu = lcu_client or getattr(state, "lcu", None)
     session = getattr(lcu, "session", None) if lcu else None
-    if not session:
-        return []
 
-    my_champ = getattr(state, "locked_champ_id", None) or getattr(state, "hovered_champ_id", None)
+    target_ids = set()
+    if session:
+        my_champ = getattr(state, "locked_champ_id", None) or getattr(state, "hovered_champ_id", None)
 
-    party_champ_ids = set()
-    party_manager = getattr(state, "party_manager", None)
-    if party_manager and getattr(party_manager, "enabled", False):
-        try:
-            party_champ_ids = {s.champion_id for s in party_manager.get_party_skins()}
-        except Exception:
-            pass
+        party_champ_ids = set()
+        party_manager = getattr(state, "party_manager", None)
+        if party_manager and getattr(party_manager, "enabled", False):
+            try:
+                party_champ_ids = {s.champion_id for s in party_manager.get_party_skins()}
+            except Exception:
+                pass
 
-    target_ids = resolve_competitive_targets(
-        mode=mode,
-        session=session,
-        my_champ_id=my_champ,
-        party_champ_ids=party_champ_ids,
-    )
-
-    if not target_ids:
-        return []
+        target_ids = resolve_competitive_targets(
+            mode=mode,
+            session=session,
+            my_champ_id=my_champ,
+            party_champ_ids=party_champ_ids,
+        )
 
     target_mods_dir = Path(mods_dir) if mods_dir is not None else injector.mods_dir
     mod_manager = ModManager(target_mods_dir)
     prepared_names: List[str] = []
 
     game_path = getattr(injector, "game_dir", None)
+    packages_to_link: List[Path] = []
 
-    for target_id in sorted(target_ids):
-        pkg = get_or_create_base_override(
-            target_id,
-            game_path=game_path,
-            lcu_client=lcu,
-        )
-        if pkg and pkg.is_file():
-            folder = mod_manager.link_archive(pkg)
-            if folder and (folder.exists() or is_junction(folder)):
-                prepared_names.append(folder.name)
+    if target_ids:
+        for target_id in sorted(target_ids):
+            pkg = get_or_create_base_override(
+                target_id,
+                game_path=game_path,
+                lcu_client=lcu,
+            )
+            if pkg and pkg.is_file():
+                packages_to_link.append(pkg)
+        try:
+            state.competitive_override_packages = list(packages_to_link)
+        except Exception:
+            pass
+    else:
+        # Fallback to cached packages planned during countdown/staging if session is unavailable
+        cached_packages = getattr(state, "competitive_override_packages", None)
+        if cached_packages:
+            packages_to_link = [Path(p) for p in cached_packages if p and Path(p).is_file()]
+
+    for pkg in packages_to_link:
+        folder = mod_manager.link_archive(pkg)
+        if folder and (folder.exists() or is_junction(folder)):
+            prepared_names.append(folder.name)
 
     return prepared_names
