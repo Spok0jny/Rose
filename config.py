@@ -144,6 +144,21 @@ def get_config_float(section: str, option: str, fallback: float) -> float:
         return fallback
 
 
+COMPETITIVE_MODES = ("off", "enemy_only", "all_except_party")
+
+
+def get_competitive_mode() -> str:
+    """Read the active Competitive Mode setting, defaulting to 'off'."""
+    mode = get_config_option("Competitive", "mode", "off").lower()
+    return mode if mode in COMPETITIVE_MODES else "off"
+
+
+def set_competitive_mode(mode: str) -> None:
+    """Persist the active Competitive Mode setting."""
+    val = mode.lower() if mode and mode.lower() in COMPETITIVE_MODES else "off"
+    set_config_option("Competitive", "mode", val)
+
+
 def set_config_option(section: str, option: str, value: str) -> None:
     config_path = get_config_file_path()
     config = configparser.ConfigParser(interpolation=None)
