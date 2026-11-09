@@ -22,6 +22,7 @@ from injection.config.base_skin_tracker import start_tracking as _start_skin_tra
 from injection.core.stage_plan import (
     PARTY_SKINS_LABEL,
     CarrierStep,
+    CompetitiveStep,
     LoadingNameStep,
     ModStep,
     PartyStep,
@@ -456,6 +457,8 @@ class InjectionTrigger:
             return None
         owned_skin_ids = getattr(self.state, 'owned_skin_ids', None) or set()
         party = self.planned_party_skins()
+        competitive = self.planned_competitive_overrides()
+        extra_steps = party + competitive
 
         custom_mod = getattr(self.state, 'selected_custom_mod', None)
         if not custom_mod:
@@ -476,21 +479,21 @@ class InjectionTrigger:
                     fallback_champion_id=custom_mod.get("champion_id") or champion_id,
                     selected_chroma_id=getattr(self.state, 'selected_chroma_id', None),
                 )
-            return self._custom_mod_plan(name, custom_mod, carrier, cname, other_mods, party)
+            return self._custom_mod_plan(name, custom_mod, carrier, cname, other_mods, extra_steps)
 
         if other_mods:
             target_skin_id = effective_skin_id or ui_skin_id
             carrier = name if self._other_mods_ride_on_skin_archive(target_skin_id, owned_skin_ids) else None
             only_other_mods = {"skin_id": target_skin_id, "champion_id": champion_id}
-            return self._custom_mod_plan(name, only_other_mods, carrier, cname, other_mods, party)
+            return self._custom_mod_plan(name, only_other_mods, carrier, cname, other_mods, extra_steps)
 
         if is_default_skin(effective_skin_id) and not historic_active and not random_active:
-            # Our champion keeps its default skin: friends' skins alone
-            return StagePlan(PARTY_SKINS_LABEL, party) if party else None
+            # Our champion keeps its default skin: friends' skins and competitive overrides alone
+            return StagePlan(PARTY_SKINS_LABEL, extra_steps) if extra_steps else None
         if self._is_base_skin_name(name, champion_id):
             return None  # inject_skin_immediately skips it
         classic = is_classic_game_mode(getattr(self.state, "current_game_mode", None))
-        return skin_plan(name, cname or None, champion_id, classic, party)
+        return skin_plan(name, cname or None, champion_id, classic, extra_steps)
 
     def _custom_mod_plan(self, label: str, custom_mod: dict, carrier: Optional[str], cname: str,
                          other_mods: list, party: tuple) -> Optional[StagePlan]:
@@ -586,6 +589,53 @@ class InjectionTrigger:
             for skin in party_manager.get_party_skins()
             if not skin.is_local
         )
+
+    def planned_competitive_overrides(self) -> tuple:
+        """Base skin overrides for enemy/other champions when competitive mode is active,
+        as stage_plan steps: () when off or unsupported."""
+        mode = getattr(self.state, "competitive_mode", "off")
+        supported = getattr(self.state, "competitive_supported", False)
+        if mode == "off" or not supported:
+            return ()
+
+        session = getattr(self.lcu, "session", None) if self.lcu else None
+        if not session:
+            return ()
+
+        my_cell = getattr(self.state, "local_cell_id", None)
+        my_champ = getattr(self.state, "locked_champ_id", None) or getattr(self.state, "hovered_champ_id", None)
+
+        party_champ_ids = set()
+        party_manager = getattr(self.state, "party_manager", None)
+        if party_manager and getattr(party_manager, "enabled", False):
+            try:
+                party_champ_ids = {s.champion_id for s in party_manager.get_party_skins()}
+            except Exception:
+                pass
+
+        try:
+            from utils.competitive.target_resolver import resolve_competitive_targets
+            from utils.competitive.override_generator import get_or_create_base_override
+
+            target_ids = resolve_competitive_targets(
+                mode=mode,
+                session=session,
+                my_champ_id=my_champ,
+                party_champ_ids=party_champ_ids,
+            )
+
+            steps = []
+            injector = getattr(self.injection_manager, "injector", None) if self.injection_manager else None
+            game_path = getattr(injector, "game_dir", None) if injector else None
+            for target_id in sorted(target_ids):
+                pkg = get_or_create_base_override(target_id, game_path=game_path, lcu_client=self.lcu)
+                if pkg and pkg.is_file():
+                    steps.append(CompetitiveStep(champion_id=target_id, package_path=pkg))
+
+            return tuple(steps)
+        except Exception as e:
+            log.warning(f"[COMPETITIVE] Failed to plan competitive overrides: {e}")
+            return ()
 
     @staticmethod
     def _is_base_skin_name(name: str, champion_id: Optional[int]) -> bool:
@@ -966,9 +1016,11 @@ class InjectionTrigger:
             random_active = getattr(self.state, 'random_mode_active', False)
             is_default = effective_skin_id is not None and is_default_skin(effective_skin_id)
             if is_default and not historic_active and not random_active:
-                if self.injection_manager and self._has_party_skins():
-                    # Our champion keeps its default skin, but friends' skins still need an overlay
-                    log.info(f"[INJECT] default skin (skinId={effective_skin_id}) - injecting party members' skins only")
+                has_party = self._has_party_skins()
+                has_comp = bool(self.planned_competitive_overrides())
+                if self.injection_manager and (has_party or has_comp):
+                    # Our champion keeps its default skin, but friends' skins or competitive overrides still need an overlay
+                    log.info(f"[INJECT] default skin (skinId={effective_skin_id}) - injecting party members' skins / competitive overrides only")
                     self._inject_party_skins_only()
                 else:
                     log.info(f"[INJECT] skipping injection for default skin (skinId={effective_skin_id}) - no mods selected")

@@ -65,6 +65,13 @@ class PartyStep:
     classic: bool
 
 
+@dataclass(frozen=True)
+class CompetitiveStep:
+    """A competitive mode base skin override package (.fantome)."""
+    champion_id: int
+    package_path: Path
+
+
 class StagePlan(NamedTuple):
     """The mods an injection installs, in its order.
 
@@ -76,7 +83,7 @@ class StagePlan(NamedTuple):
 
 
 def skin_plan(skin_name: str, champion_name: Optional[str] = None, champion_id: Optional[int] = None,
-              classic: bool = False, party: Tuple[PartyStep, ...] = ()) -> StagePlan:
+              classic: bool = False, party: Tuple[object, ...] = ()) -> StagePlan:
     """The plan of a skin injection (SkinInjector.inject_skin)."""
     return StagePlan(skin_name, (SkinStep(skin_name, champion_name or None, champion_id, classic),) + tuple(party))
 
@@ -86,10 +93,13 @@ def describe(plan: StagePlan) -> str:
     extras = []
     mods = sum(1 for step in plan.steps if isinstance(step, ModStep))
     friends = sum(1 for step in plan.steps if isinstance(step, PartyStep))
+    comps = sum(1 for step in plan.steps if isinstance(step, CompetitiveStep))
     if mods:
         extras.append(f"{mods} mod{'s' if mods > 1 else ''}")
     if friends and plan.label != PARTY_SKINS_LABEL:
         extras.append(f"{friends} friend skin{'s' if friends > 1 else ''}")
+    if comps:
+        extras.append(f"{comps} competitive override{'s' if comps > 1 else ''}")
     return f" + {' + '.join(extras)}" if extras else ""
 
 
@@ -142,6 +152,11 @@ def prepare_plan(injector, plan: StagePlan, target_dir: Path) -> Optional[List[s
             folder = _prepare_party_skin(injector, step, target_dir)
             if folder:
                 names.append(folder)
+        elif isinstance(step, CompetitiveStep):
+            if step.package_path and Path(step.package_path).is_file():
+                folder = ModManager(target_dir).link_archive(Path(step.package_path))
+                if folder and (folder.exists() or is_junction(folder)):
+                    names.append(folder.name)
     return names or None
 
 

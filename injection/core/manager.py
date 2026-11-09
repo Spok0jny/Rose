@@ -601,8 +601,8 @@ class InjectionManager:
             # countdown did not already (the injection waits for that connect)
             self.start_patcher_in_background()
             
-            # Build optional callback to add party member skins to injection
-            extra_mods_callback = None
+            # Build optional callback to add party member skins and competitive overrides to injection
+            extra_callbacks = []
             if self.shared_state:
                 party_manager = getattr(self.shared_state, "party_manager", None)
                 if party_manager and getattr(party_manager, "enabled", False):
@@ -612,9 +612,29 @@ class InjectionManager:
                             party_manager, self.shared_state, self
                         )
                         if party_hook.is_enabled():
-                            extra_mods_callback = lambda inj: party_hook.prepare_party_mods(inj)
+                            extra_callbacks.append(lambda inj: party_hook.prepare_party_mods(inj))
                     except Exception as e:
                         log.debug(f"[INJECT] Party injection hook not used: {e}")
+
+                comp_mode = getattr(self.shared_state, "competitive_mode", "off")
+                comp_supp = getattr(self.shared_state, "competitive_supported", False)
+                if comp_mode != "off" and comp_supp:
+                    try:
+                        from utils.competitive.injection_hook import prepare_competitive_mods
+                        extra_callbacks.append(lambda inj: prepare_competitive_mods(self.shared_state, inj))
+                    except Exception as e:
+                        log.debug(f"[INJECT] Competitive injection hook not used: {e}")
+
+            extra_mods_callback = None
+            if extra_callbacks:
+                def combined_extra(inj):
+                    result = []
+                    for cb in extra_callbacks:
+                        res = cb(inj)
+                        if res:
+                            result.extend(res)
+                    return result
+                extra_mods_callback = combined_extra
 
             success = inject(extra_mods_callback)
             if success:
