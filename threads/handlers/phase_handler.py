@@ -70,6 +70,12 @@ class PhaseHandler:
         
         elif phase == "ChampSelect":
             self._sync_saved_mods_for_listing()
+            try:
+                from utils.competitive.queue_detector import is_draft_mode
+                sess = getattr(self.lcu, "session", None) or self.lcu.get("/lol-gameflow/v1/session")
+                self.state.competitive_supported = is_draft_mode(sess)
+            except Exception as e:
+                log.debug(f"[phase] Could not evaluate competitive mode eligibility: {e}")
 
             # Swiftplay/Quickplay queue ID fallback - handles race condition where game_mode_detector
             # hasn't set is_swiftplay_mode yet when we enter ChampSelect
