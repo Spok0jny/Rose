@@ -306,8 +306,7 @@
   }
 
   function findMountContainer() {
-    return document.querySelector(".bottom-right-buttons") ||
-           document.querySelector(".champion-select");
+    return document.querySelector(".bottom-right-buttons");
   }
 
   function mountButton() {
@@ -317,22 +316,26 @@
       return;
     }
 
-    if (buttonElement && buttonElement.isConnected) {
+    const container = findMountContainer();
+    if (!container) return;
+
+    if (buttonElement && buttonElement.isConnected && buttonElement.parentElement === container) {
       updateButtonUI();
       return;
     }
 
-    const container = findMountContainer();
-    if (!container) return;
+    if (buttonElement && buttonElement.parentElement) {
+      buttonElement.parentElement.removeChild(buttonElement);
+    }
 
     const computed = window.getComputedStyle(container);
     if (computed.position === "static") {
       container.style.position = "relative";
     }
 
-    const button = document.createElement("div");
+    const button = buttonElement || document.createElement("div");
     button.className = BUTTON_CLASS;
-    button.addEventListener("click", (e) => {
+    button.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
       if (!competitiveSupported) return;
@@ -341,7 +344,7 @@
       } else {
         openFlyout();
       }
-    });
+    };
 
     container.appendChild(button);
     buttonElement = button;
@@ -383,9 +386,10 @@
     observer = new MutationObserver(() => {
       const inChampSelect = Boolean(document.querySelector(".champion-select"));
       if (inChampSelect) {
-        if (!buttonElement || !buttonElement.isConnected) {
+        const container = findMountContainer();
+        if (container && (!buttonElement || !buttonElement.isConnected || buttonElement.parentElement !== container)) {
           mountButton();
-        } else {
+        } else if (buttonElement && buttonElement.isConnected) {
           updatePosition();
         }
       } else if (buttonElement) {

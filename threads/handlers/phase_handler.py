@@ -71,9 +71,16 @@ class PhaseHandler:
         elif phase == "ChampSelect":
             self._sync_saved_mods_for_listing()
             try:
-                from utils.competitive.queue_detector import is_draft_mode
-                sess = getattr(self.lcu, "session", None) or self.lcu.get("/lol-gameflow/v1/session")
-                self.state.competitive_supported = is_draft_mode(sess)
+                from utils.competitive.queue_detector import DRAFT_QUEUE_IDS, is_draft_mode
+                if self.state.current_queue_id in DRAFT_QUEUE_IDS:
+                    self.state.competitive_supported = True
+                else:
+                    gameflow = None
+                    try:
+                        gameflow = self.lcu.get("/lol-gameflow/v1/session", use_cache=False)
+                    except Exception:
+                        pass
+                    self.state.competitive_supported = is_draft_mode(gameflow, queue_id=self.state.current_queue_id)
             except Exception as e:
                 log.debug(f"[phase] Could not evaluate competitive mode eligibility: {e}")
 
@@ -263,4 +270,3 @@ class PhaseHandler:
         # via cleanup_swiftplay_exit() which also handles the associated
         # tracking/mods state atomically.  Clearing the flag alone would
         # leave orphaned swiftplay_extracted_mods / swiftplay_skin_tracking.
-
