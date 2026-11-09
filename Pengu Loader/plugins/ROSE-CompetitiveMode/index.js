@@ -6,12 +6,10 @@
  */
 (function initCompetitiveMode() {
   const LOG_PREFIX = "[ROSE-CompetitiveMode]";
-  const CONTAINER_SELECTOR = ".skin-selection-carousel-container, .skin-selection-carousel, .champion-select-main-container";
   const BUTTON_CLASS = "rose-competitive-button";
   const FLYOUT_CLASS = "rose-competitive-flyout";
 
   let bridge = null;
-  let isInChampSelect = false;
   let competitiveMode = "off"; // "off", "enemy_only", "all_except_party"
   let competitiveSupported = false;
   let buttonElement = null;
@@ -46,12 +44,13 @@
   const CSS_RULES = `
     .${BUTTON_CLASS} {
       position: absolute;
-      top: 14px;
-      right: 18px;
-      width: 32px;
-      height: 32px;
+      right: 126px;
+      bottom: 100%;
+      margin-bottom: 8px;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
-      background: rgba(1, 10, 19, 0.85);
+      background: rgba(1, 10, 19, 0.9);
       border: 1px solid #785a28;
       display: flex;
       align-items: center;
@@ -59,7 +58,8 @@
       cursor: pointer;
       z-index: 100;
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      user-select: none;
     }
 
     .${BUTTON_CLASS}:hover {
@@ -75,7 +75,7 @@
     }
 
     .${BUTTON_CLASS}.disabled {
-      opacity: 0.35;
+      opacity: 0.4;
       cursor: not-allowed;
       border-color: #5c5b57;
       transform: none !important;
@@ -83,9 +83,9 @@
     }
 
     .${BUTTON_CLASS} svg {
-      width: 18px;
-      height: 18px;
-      transition: fill 0.2s ease;
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
     }
 
     .${BUTTON_CLASS} .tooltip {
@@ -119,7 +119,7 @@
       border: 1px solid #785a28;
       border-radius: 4px;
       padding: 10px 0;
-      min-width: 210px;
+      min-width: 220px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.9);
       z-index: 10000;
       font-family: LoL Display, sans-serif;
@@ -211,7 +211,7 @@
 
     let tooltipText = `Competitive Mode: ${getModeLabel(competitiveMode)}`;
     if (!competitiveSupported) {
-      tooltipText = "Competitive Mode is only available in Draft & Ranked queues";
+      tooltipText = "Competitive Mode (Draft & Ranked only)";
     }
 
     buttonElement.innerHTML = `
@@ -234,8 +234,9 @@
     const rect = buttonElement.getBoundingClientRect();
     const flyout = document.createElement("div");
     flyout.className = FLYOUT_CLASS;
-    flyout.style.top = `${rect.bottom + 8}px`;
-    flyout.style.left = `${Math.max(10, rect.right - 210)}px`;
+    // Position flyout upwards above the button
+    flyout.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 8)}px`;
+    flyout.style.right = `${Math.max(10, window.innerWidth - rect.right)}px`;
 
     const options = [
       { id: "off", label: "Off (Default Rose)" },
@@ -291,8 +292,14 @@
     }, 10);
   }
 
+  function findMountContainer() {
+    return document.querySelector(".bottom-right-buttons") ||
+           document.querySelector(".champion-select");
+  }
+
   function mountButton() {
-    if (!isInChampSelect) {
+    const champSelect = document.querySelector(".champion-select");
+    if (!champSelect) {
       removeButton();
       return;
     }
@@ -302,13 +309,9 @@
       return;
     }
 
-    const container = document.querySelector(".skin-selection-carousel-container") ||
-                      document.querySelector(".skin-selection-carousel") ||
-                      document.querySelector(".champion-select-main-container");
-
+    const container = findMountContainer();
     if (!container) return;
 
-    // Ensure relative positioning
     const computed = window.getComputedStyle(container);
     if (computed.position === "static") {
       container.style.position = "relative";
@@ -352,8 +355,7 @@
 
   function handlePhaseChange(data) {
     const phase = data?.phase || "";
-    isInChampSelect = phase === "ChampSelect";
-    if (isInChampSelect) {
+    if (phase === "ChampSelect" || document.querySelector(".champion-select")) {
       mountButton();
       if (bridge) {
         bridge.send({ type: "request-competitive-state" });
@@ -366,11 +368,20 @@
   function startObserver() {
     if (observer) return;
     observer = new MutationObserver(() => {
-      if (isInChampSelect && (!buttonElement || !buttonElement.isConnected)) {
-        mountButton();
+      const inChampSelect = Boolean(document.querySelector(".champion-select"));
+      if (inChampSelect) {
+        if (!buttonElement || !buttonElement.isConnected) {
+          mountButton();
+        }
+      } else if (buttonElement) {
+        removeButton();
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
+
+    if (document.querySelector(".champion-select")) {
+      mountButton();
+    }
   }
 
   async function start() {
