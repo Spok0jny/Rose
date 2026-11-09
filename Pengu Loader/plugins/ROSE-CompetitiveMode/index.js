@@ -44,11 +44,12 @@
   const CSS_RULES = `
     .${BUTTON_CLASS} {
       position: absolute;
-      right: 126px;
+      right: 155px;
       bottom: 100%;
-      margin-bottom: 8px;
-      width: 34px;
-      height: 34px;
+      margin-bottom: 10px;
+      width: 32px;
+      height: 32px;
+      box-sizing: border-box;
       border-radius: 50%;
       background: rgba(1, 10, 19, 0.9);
       border: 1px solid #785a28;
@@ -57,7 +58,7 @@
       justify-content: center;
       cursor: pointer;
       z-index: 100;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
       user-select: none;
     }
@@ -65,7 +66,7 @@
     .${BUTTON_CLASS}:hover {
       border-color: #c8aa6e;
       box-shadow: 0 0 10px rgba(200, 170, 110, 0.4);
-      transform: scale(1.05);
+      transform: scale(1.06);
     }
 
     .${BUTTON_CLASS}.active {
@@ -83,8 +84,8 @@
     }
 
     .${BUTTON_CLASS} svg {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       pointer-events: none;
     }
 
@@ -203,9 +204,21 @@
     return "Off";
   }
 
+  function updatePosition() {
+    if (!buttonElement || !buttonElement.parentElement) return;
+    const container = buttonElement.parentElement;
+    const customMods = container.querySelector(".rose-custom-wheel-button");
+    if (customMods && customMods.offsetWidth > 0) {
+      buttonElement.style.right = `${customMods.offsetWidth + 10}px`;
+    } else {
+      buttonElement.style.right = "155px";
+    }
+  }
+
   function updateButtonUI() {
     if (!buttonElement) return;
 
+    updatePosition();
     const isActive = competitiveMode !== "off" && competitiveSupported;
     buttonElement.className = `${BUTTON_CLASS} ${isActive ? "active" : ""} ${!competitiveSupported ? "disabled" : ""}`;
 
@@ -236,7 +249,7 @@
     flyout.className = FLYOUT_CLASS;
     // Position flyout upwards above the button
     flyout.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 8)}px`;
-    flyout.style.right = `${Math.max(10, window.innerWidth - rect.right)}px`;
+    flyout.style.right = `${Math.max(10, window.innerWidth - rect.right - 10)}px`;
 
     const options = [
       { id: "off", label: "Off (Default Rose)" },
@@ -372,6 +385,8 @@
       if (inChampSelect) {
         if (!buttonElement || !buttonElement.isConnected) {
           mountButton();
+        } else {
+          updatePosition();
         }
       } else if (buttonElement) {
         removeButton();
