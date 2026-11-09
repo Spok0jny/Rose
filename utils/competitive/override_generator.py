@@ -24,10 +24,15 @@ from utils.core.paths import get_user_data_dir
 
 log = get_logger()
 
-OVERRIDE_PACKAGE_VERSION = "1.1.0"
+OVERRIDE_PACKAGE_VERSION = "1.2.0"
 SKIN_DATA_CLASS = 0x9B67E9F6  # fnv1a_lower("SkinCharacterDataProperties")
+RESOURCE_RESOLVER_CLASS = 0xEF3A0F33  # fnv1a_lower("ResourceResolver")
+ANIMATION_GRAPH_DATA_CLASS = 0xF5FB07C7  # fnv1a_lower("AnimationGraphData")
 PROP_PATH_HASH = 0x1D369C29
 PROP_SKIN_ID = 0xA977F4AE
+PROP_RESOURCE_RESOLVER = 0x62286E7E
+PROP_ANIMATION_GRAPH_DATA = 0x426D89A3
+TYPE_LINK = 132
 
 # Complete mapping of League of Legends Champion IDs to canonical aliases
 CHAMPION_ID_TO_ALIAS: Dict[int, str] = {
@@ -132,12 +137,19 @@ def find_champion_wad(game_path: Path, alias: str) -> Optional[Path]:
     return None
 
 
-def adapt_skin_bin(base_bin_data: bytes, char: str, skin_idx: int, champion_id: int) -> bytes:
+def adapt_skin_bin(
+    base_bin_data: bytes,
+    char: str,
+    skin_idx: int,
+    champion_id: int,
+    has_custom_anim: bool = False,
+) -> bytes:
     """Adapt a character's base skin0.bin for skinN.bin by updating entry path hash & properties.
 
     League's game client requires skinN.bin to define the entry matching
-    Characters/<char>/Skins/Skin<N>. If skin0.bin is mapped unmodified, the client
-    fails to find the expected entry and crashes at game load.
+    Characters/<char>/Skins/Skin<N>. Furthermore, spell particle resolution requires
+    Characters/<char>/Skins/Skin<N>/Resources, and custom animation graphs must be
+    relinked to prevent model collapse or invisible spells.
     """
     try:
         bin_file = Bin(base_bin_data)
@@ -145,16 +157,56 @@ def adapt_skin_bin(base_bin_data: bytes, char: str, skin_idx: int, champion_id: 
         if entry is None:
             return base_bin_data
 
+        # 1. Update SkinCharacterDataProperties entry path hash & properties
         new_path_hash = fnv1a_lower(f"Characters/{char}/Skins/Skin{skin_idx}")
         entry.path_hash = new_path_hash
         entry.set_field(PROP_PATH_HASH, Value(HASH, struct.pack("<I", new_path_hash)))
         if entry.find_field(PROP_SKIN_ID) is not None:
             entry.set_field(PROP_SKIN_ID, Value(U32, struct.pack("<I", champion_id * 1000 + skin_idx)))
 
+        # 2. Update ResourceResolver linkage and entry
+        new_res_hash = fnv1a_lower(f"Characters/{char}/Skins/Skin{skin_idx}/Resources")
+        if entry.find_field(PROP_RESOURCE_RESOLVER) is not None:
+            entry.set_field(PROP_RESOURCE_RESOLVER, Value(TYPE_LINK, struct.pack("<I", new_res_hash)))
+
+        res_entry = bin_file.find_entry(RESOURCE_RESOLVER_CLASS)
+        if res_entry is not None:
+            res_entry.path_hash = new_res_hash
+            if res_entry.find_field(PROP_PATH_HASH) is not None:
+                res_entry.set_field(PROP_PATH_HASH, Value(HASH, struct.pack("<I", new_res_hash)))
+
+        # 3. If this skin has a custom animation graph, update the animation link on SkinCharacterDataProperties
+        if has_custom_anim:
+            f_anim = entry.find_field(PROP_ANIMATION_GRAPH_DATA)
+            if f_anim is not None and hasattr(f_anim.value.v, "find_field"):
+                sub_anim = f_anim.value.v.find_field(ANIMATION_GRAPH_DATA_CLASS)
+                if sub_anim is not None:
+                    new_anim_hash = fnv1a_lower(f"Characters/{char}/Animations/Skin{skin_idx}")
+                    f_anim.value.v.set_field(ANIMATION_GRAPH_DATA_CLASS, Value(TYPE_LINK, struct.pack("<I", new_anim_hash)))
+
         return bin_file.write()
     except (PropError, Exception) as exc:
         log.debug(f"[COMPETITIVE] Could not adapt bin for {char} skin {skin_idx}: {exc}")
         return base_bin_data
+
+
+def adapt_animation_bin(base_anim_data: bytes, char: str, skin_idx: int) -> bytes:
+    """Adapt a character's base animations/skin0.bin for animations/skinN.bin."""
+    try:
+        bin_file = Bin(base_anim_data)
+        entry = bin_file.find_entry(ANIMATION_GRAPH_DATA_CLASS)
+        if entry is None:
+            return base_anim_data
+
+        new_anim_hash = fnv1a_lower(f"Characters/{char}/Animations/Skin{skin_idx}")
+        entry.path_hash = new_anim_hash
+        if entry.find_field(PROP_PATH_HASH) is not None:
+            entry.set_field(PROP_PATH_HASH, Value(HASH, struct.pack("<I", new_anim_hash)))
+
+        return bin_file.write()
+    except (PropError, Exception) as exc:
+        log.debug(f"[COMPETITIVE] Could not adapt animation bin for {char} skin {skin_idx}: {exc}")
+        return base_anim_data
 
 
 def create_base_override(
@@ -210,6 +262,12 @@ def create_base_override(
             if not skin0_data:
                 continue
 
+            # Check for base animation graph
+            p_anim0 = f"data/characters/{char}/animations/skin0.bin"
+            if not game_wad.has_path(p_anim0):
+                p_anim0 = f"assets/characters/{char}/animations/skin0.bin"
+            anim0_data = game_wad.read_path(p_anim0) if game_wad.has_path(p_anim0) else None
+
             for skin_idx in range(1, 150):
                 pn = f"data/characters/{char}/skins/skin{skin_idx}.bin"
                 target_path = None
@@ -220,9 +278,32 @@ def create_base_override(
                     if game_wad.has_path(pn_assets):
                         target_path = pn_assets
 
+                target_anim_path = None
+                if anim0_data is not None:
+                    pn_anim = f"data/characters/{char}/animations/skin{skin_idx}.bin"
+                    if game_wad.has_path(pn_anim):
+                        target_anim_path = pn_anim
+                    else:
+                        pn_anim_assets = f"assets/characters/{char}/animations/skin{skin_idx}.bin"
+                        if game_wad.has_path(pn_anim_assets):
+                            target_anim_path = pn_anim_assets
+
+                has_custom_anim = target_anim_path is not None
+
                 if target_path:
-                    adapted_data = adapt_skin_bin(skin0_data, char, skin_idx, champion_id)
+                    adapted_data = adapt_skin_bin(
+                        skin0_data,
+                        char,
+                        skin_idx,
+                        champion_id,
+                        has_custom_anim=has_custom_anim,
+                    )
                     mod_wad.put(path_hash(target_path), adapted_data)
+                    mapped_count += 1
+
+                if target_anim_path and anim0_data:
+                    adapted_anim = adapt_animation_bin(anim0_data, char, skin_idx)
+                    mod_wad.put(path_hash(target_anim_path), adapted_anim)
                     mapped_count += 1
 
         if mapped_count == 0:
