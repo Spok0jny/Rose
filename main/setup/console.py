@@ -34,22 +34,14 @@ def setup_console() -> None:
                 pass
         
         # Check if we're in windowed mode (no console attached)
-        show_console = any(arg in sys.argv for arg in ("--verbose", "--debug", "--console"))
         console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if not console_hwnd:
-            ATTACH_PARENT_PROCESS = -1
-            if ctypes.windll.kernel32.AttachConsole(ATTACH_PARENT_PROCESS):
-                console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-            elif show_console:
-                ctypes.windll.kernel32.AllocConsole()
-                console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-            else:
-                # Allocate a console for the process to prevent blocking operations
-                ctypes.windll.kernel32.AllocConsole()
-                # Hide the console window immediately
-                console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-                if console_hwnd:
-                    ctypes.windll.user32.ShowWindow(console_hwnd, 0)  # SW_HIDE = 0
+            # Allocate a console for the process to prevent blocking operations
+            ctypes.windll.kernel32.AllocConsole()
+            # Hide the console window immediately
+            console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if console_hwnd:
+                ctypes.windll.user32.ShowWindow(console_hwnd, 0)  # SW_HIDE = 0
         
         # Increase console buffer size to prevent blocking (Windows-specific fix)
         # This prevents the console output buffer from filling up and causing writes to block
@@ -80,20 +72,7 @@ def setup_console() -> None:
 
 
 def redirect_none_streams() -> None:
-    """Redirect None streams to console if attached/allocated, or devnull to prevent blocking"""
-    show_console = any(arg in sys.argv for arg in ("--verbose", "--debug", "--console"))
-    if show_console:
-        try:
-            if sys.stdin is None:
-                sys.stdin = open('CONIN$', 'r', encoding='utf-8')
-            if sys.stdout is None:
-                sys.stdout = open('CONOUT$', 'w', encoding='utf-8')
-            if sys.stderr is None:
-                sys.stderr = open('CONOUT$', 'w', encoding='utf-8')
-            return
-        except Exception:
-            pass
-
+    """Redirect None streams to devnull to prevent blocking"""
     if sys.stdin is None:
         sys.stdin = open(os.devnull, 'r', encoding='utf-8')
     if sys.stdout is None:
@@ -190,3 +169,4 @@ def cleanup_console() -> None:
         except (OSError, AttributeError) as e:
             # Logging might not be available at this point
             pass
+
