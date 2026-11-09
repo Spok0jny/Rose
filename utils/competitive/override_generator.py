@@ -9,6 +9,7 @@ using PropBin structures inside a ModWad packaged as a .fantome archive.
 from __future__ import annotations
 
 import json
+import struct
 import uuid
 import zipfile
 from pathlib import Path
@@ -16,11 +17,17 @@ from typing import Dict, Optional
 
 from config import get_config_option
 from injection.baseskin.package import character_names
+from injection.baseskin.propbin import Bin, HASH, PropError, U32, Value, fnv1a_lower
 from injection.baseskin.wad import GameWad, ModWad, path_hash
 from utils.core.logging import get_logger
 from utils.core.paths import get_user_data_dir
 
 log = get_logger()
+
+OVERRIDE_PACKAGE_VERSION = "1.1.0"
+SKIN_DATA_CLASS = 0x9B67E9F6  # fnv1a_lower("SkinCharacterDataProperties")
+PROP_PATH_HASH = 0x1D369C29
+PROP_SKIN_ID = 0xA977F4AE
 
 # Complete mapping of League of Legends Champion IDs to canonical aliases
 CHAMPION_ID_TO_ALIAS: Dict[int, str] = {
@@ -125,6 +132,31 @@ def find_champion_wad(game_path: Path, alias: str) -> Optional[Path]:
     return None
 
 
+def adapt_skin_bin(base_bin_data: bytes, char: str, skin_idx: int, champion_id: int) -> bytes:
+    """Adapt a character's base skin0.bin for skinN.bin by updating entry path hash & properties.
+
+    League's game client requires skinN.bin to define the entry matching
+    Characters/<char>/Skins/Skin<N>. If skin0.bin is mapped unmodified, the client
+    fails to find the expected entry and crashes at game load.
+    """
+    try:
+        bin_file = Bin(base_bin_data)
+        entry = bin_file.find_entry(SKIN_DATA_CLASS)
+        if entry is None:
+            return base_bin_data
+
+        new_path_hash = fnv1a_lower(f"Characters/{char}/Skins/Skin{skin_idx}")
+        entry.path_hash = new_path_hash
+        entry.set_field(PROP_PATH_HASH, Value(HASH, struct.pack("<I", new_path_hash)))
+        if entry.find_field(PROP_SKIN_ID) is not None:
+            entry.set_field(PROP_SKIN_ID, Value(U32, struct.pack("<I", champion_id * 1000 + skin_idx)))
+
+        return bin_file.write()
+    except (PropError, Exception) as exc:
+        log.debug(f"[COMPETITIVE] Could not adapt bin for {char} skin {skin_idx}: {exc}")
+        return base_bin_data
+
+
 def create_base_override(
     champion_id: int,
     game_path: Optional[Path] = None,
@@ -180,14 +212,18 @@ def create_base_override(
 
             for skin_idx in range(1, 150):
                 pn = f"data/characters/{char}/skins/skin{skin_idx}.bin"
+                target_path = None
                 if game_wad.has_path(pn):
-                    mod_wad.put(path_hash(pn), skin0_data)
-                    mapped_count += 1
+                    target_path = pn
                 else:
                     pn_assets = f"assets/characters/{char}/skins/skin{skin_idx}.bin"
                     if game_wad.has_path(pn_assets):
-                        mod_wad.put(path_hash(pn_assets), skin0_data)
-                        mapped_count += 1
+                        target_path = pn_assets
+
+                if target_path:
+                    adapted_data = adapt_skin_bin(skin0_data, char, skin_idx, champion_id)
+                    mod_wad.put(path_hash(target_path), adapted_data)
+                    mapped_count += 1
 
         if mapped_count == 0:
             log.warning(f"[COMPETITIVE] No valid skin bins found to override for {alias}")
@@ -200,7 +236,7 @@ def create_base_override(
                 "Author": "ROSE",
                 "Description": f"Competitive Mode Base Skin Override for {alias}",
                 "Name": f"ROSE - Base {alias}",
-                "Version": "1.0.0",
+                "Version": OVERRIDE_PACKAGE_VERSION,
             }
             meta_json = json.dumps(info, indent=2, ensure_ascii=False)
             zf.writestr("META/info.json", meta_json)
@@ -241,6 +277,16 @@ def get_or_create_base_override(
     if dest_path.is_file():
         alias = get_champion_alias(champion_id, lcu_client=lcu_client)
         if alias:
+            try:
+                with zipfile.ZipFile(dest_path, "r") as zf:
+                    meta = json.loads(zf.read("metadata.json"))
+                    if meta.get("Version") != OVERRIDE_PACKAGE_VERSION:
+                        log.info(f"[COMPETITIVE] Cache for {alias} has outdated version {meta.get('Version')}, regenerating...")
+                        dest_path.unlink(missing_ok=True)
+            except Exception:
+                dest_path.unlink(missing_ok=True)
+
+        if dest_path.is_file():
             if game_path is None:
                 raw_path = get_config_option("General", "game_path", r"C:\Riot Games\League of Legends\Game")
                 game_path = Path(raw_path) if raw_path else Path(r"C:\Riot Games\League of Legends\Game")

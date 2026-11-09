@@ -11,6 +11,7 @@ from pathlib import Path
 from injection.baseskin.wad import ModWad, path_hash
 from injection.mods.mod_files import ModFiles
 from utils.competitive.override_generator import (
+    adapt_skin_bin,
     get_champion_alias,
     get_competitive_cache_dir,
     get_or_create_base_override,
@@ -130,6 +131,28 @@ class TestOverrideGenerator(unittest.TestCase):
         empty_game_dir.mkdir(parents=True, exist_ok=True)
         result = get_or_create_base_override(266, empty_game_dir, self.cache_dir)
         self.assertIsNone(result)
+
+    def test_adapt_skin_bin_with_prop_structure(self):
+        import struct
+        from injection.baseskin.propbin import Bin, fnv1a_lower
+
+        # Build a minimal valid PROP file with SkinCharacterDataProperties
+        skin_data_class = 0x9B67E9F6
+        base_path_hash = fnv1a_lower("Characters/aatrox/Skins/Skin0")
+        target_path_hash = fnv1a_lower("Characters/aatrox/Skins/Skin5")
+
+        # Entry 0 body: 4-byte path_hash + 2-byte field count (0 fields)
+        entry_body = struct.pack("<IH", base_path_hash, 0)
+        entry_bytes = struct.pack("<I", len(entry_body)) + entry_body
+
+        prop_header = b"PROP\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00" + struct.pack("<I", skin_data_class)
+        raw_prop = prop_header + entry_bytes
+
+        adapted = adapt_skin_bin(raw_prop, "aatrox", 5, 266)
+        adapted_bin = Bin(adapted)
+        adapted_entry = adapted_bin.find_entry(skin_data_class)
+        self.assertIsNotNone(adapted_entry)
+        self.assertEqual(adapted_entry.path_hash, target_path_hash)
 
 
 if __name__ == "__main__":
